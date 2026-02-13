@@ -30,7 +30,7 @@ app.use(express.json({ limit: '10mb' }));
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost",
-  "https://resumeiq-sw7m.onrender.com",
+  "https://resumeiq-2k2r.onrender.com",
   process.env.CLIENT_ORIGIN
 ].filter(Boolean); // 🔥 removes undefined
 
