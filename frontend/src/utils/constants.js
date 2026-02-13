@@ -1,5 +1,10 @@
 const resolveBaseUrl = () => {
-    const envBaseUrl = String(import.meta.env.VITE_BASE_URL || import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '').trim();
+    const envBaseUrl = String(
+        import.meta.env.VITE_API_URL ||
+            import.meta.env.VITE_API_BASE_URL ||
+            import.meta.env.VITE_BASE_URL ||
+            '',
+    ).trim();
     if (envBaseUrl) {
         return envBaseUrl.replace(/\/+$/, '');
     }

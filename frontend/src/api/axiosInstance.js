@@ -1,31 +1,9 @@
 import axios from 'axios';
-import { API_TIMEOUT } from '@/utils/constants';
+import { API_BASE_URL, API_TIMEOUT } from '@/utils/constants';
 import { clearAuthToken, getAuthToken } from '@/utils/helpers';
 
-const resolveBaseUrl = () => {
-  const envValue = String(import.meta.env.VITE_API_URL || '').trim();
-
-  if (envValue) {
-    return envValue.replace(/\/+$/, '');
-  }
-
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    return window.location.origin;
-  }
-
-  return import.meta.env.DEV
-    ? 'http://localhost:5000'
-    : '';
-};
-
-const BASE_URL = resolveBaseUrl();
-
-if (import.meta.env.DEV) {
-  console.log('API BASE URL:', BASE_URL);
-}
-
 const axiosInstance = axios.create({
-  baseURL: `${BASE_URL}/api`,
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },

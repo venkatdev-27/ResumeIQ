@@ -62,6 +62,15 @@ app.get("/health", (req, res) => {
   res.status(200).json({ status: "OK" });
 });
 
+// ✅ API TEST ENDPOINT
+app.get("/api/test", (req, res) => {
+  res.status(200).json({ 
+    message: "API is working correctly",
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 // ================= RATE LIMIT =================
 app.use('/api', apiLimiter);
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Button from '@/components/common/Button';
 import { generateResumePdfAPI } from '@/api/resumeAPI';
+import { downloadResume } from '@/utils/downloadUtils';
 import { formToResumeData, getErrorMessage } from '@/utils/helpers';
 import TemplateOne from './TemplateOne';
 import TemplateTwo from './TemplateTwo';
@@ -150,40 +151,18 @@ function ResumePreview({ resumeData, enhancedResume, formData, template }) {
                 html,
                 fileName: 'resume.pdf',
             });
-            const pdfBlob = responseBlob instanceof Blob ? responseBlob : new Blob([responseBlob], { type: 'application/pdf' });
-            const url = window.URL.createObjectURL(pdfBlob);
             
-            // Mobile-specific download handling
-            const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            // Use the new mobile-safe download utility
+            await downloadResume(
+                () => Promise.resolve(responseBlob),
+                null,
+                'resume.pdf'
+            );
             
-            if (isMobileDevice) {
-                // For mobile devices, open in new tab/window to trigger download
-                const newWindow = window.open(url, '_blank');
-                if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-                    // Fallback: create invisible iframe for download
-                    const iframe = document.createElement('iframe');
-                    iframe.style.display = 'none';
-                    iframe.src = url;
-                    document.body.appendChild(iframe);
-                    setTimeout(() => {
-                        document.body.removeChild(iframe);
-                    }, 1000);
-                }
-            } else {
-                // Desktop download handling
-                const anchor = document.createElement('a');
-                anchor.href = url;
-                anchor.download = 'resume.pdf';
-                document.body.appendChild(anchor);
-                anchor.click();
-                document.body.removeChild(anchor);
-            }
-            
-            window.URL.revokeObjectURL(url);
             setDownloadStatus('succeeded');
         } catch (error) {
             setDownloadStatus('failed');
-            setDownloadError(getErrorMessage(error, 'Unable to download PDF. Please try again.'));
+            setDownloadError(error.message || 'Unable to download PDF. Please try again.');
         }
     };
 

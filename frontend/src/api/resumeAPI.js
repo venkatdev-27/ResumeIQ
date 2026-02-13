@@ -50,3 +50,22 @@ export const generateResumePdfAPI = async ({ html, fileName = 'resume.pdf' }) =>
 
     return response.data;
 };
+
+// NEW: Download existing resume by ID
+export const downloadResumeAPI = async (resumeId) => {
+    try {
+        const response = await axiosInstance.get(`/resume/download/${resumeId}`, {
+            responseType: 'blob',
+        });
+        return response.data;
+    } catch (error) {
+        // Handle specific error cases
+        if (error.response?.status === 404) {
+            throw new Error('Resume not found');
+        }
+        if (error.response?.status === 403) {
+            throw new Error('Access denied. Please log in.');
+        }
+        throw new Error('Failed to download resume. Please try again.');
+    }
+};
