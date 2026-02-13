@@ -30,7 +30,7 @@ app.use(express.json({ limit: '10mb' }));
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost",
-  process.env.CLIENT_URL
+  process.env.CLIENT_ORIGIN
 ].filter(Boolean); // 🔥 removes undefined
 
 app.use(cors({
