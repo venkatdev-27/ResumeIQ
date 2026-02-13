@@ -14,6 +14,9 @@ const apiLimiter = require('./middlewares/rateLimit.middleware');
 
 const app = express();
 
+// ✅ Required for Render (real client IP for rate limiter)
+app.set("trust proxy", 1);
+
 // ================= SECURITY =================
 app.use(helmet());
 
@@ -25,18 +28,17 @@ app.use(express.json({ limit: '10mb' }));
 
 // ================= CORS =================
 const allowedOrigins = [
-  "http://localhost:5173", // local Vite
-  "http://localhost",      // nginx
-  process.env.CLIENT_URL   // production domain
-];
+  "http://localhost:5173",
+  "http://localhost",
+  process.env.CLIENT_URL
+].filter(Boolean); // 🔥 removes undefined
 
 app.use(cors({
-  origin: function (origin, callback) {
+  origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
+      return callback(null, true);
     }
+    return callback(null, false); // ❗ don't crash server
   },
   credentials: true,
 }));
@@ -45,6 +47,19 @@ app.use(cors({
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
+
+// ================= ROOT ROUTE =================
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message: "API is running 🚀"
+  });
+});
+
+// ✅ HEALTH CHECK (for Render)
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "OK" });
+});
 
 // ================= RATE LIMIT =================
 app.use('/api', apiLimiter);
