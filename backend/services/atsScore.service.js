@@ -158,7 +158,7 @@ const getResumeOnlyTargets = async ({ normalizedResume, resumeKeywords, resumeDa
             }),
             config: {
                 responseMimeType: 'application/json',
-                temperature: 0.2,
+                temperature: 0.4,
             },
         });
 

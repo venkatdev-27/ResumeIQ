@@ -619,7 +619,7 @@ const improveResumeWithGemini = async ({
             contents: prompt,
             config: {
                 responseMimeType: 'application/json',
-                temperature: 0.3,
+                temperature: 0.4,
             },
         });
     } catch (error) {
