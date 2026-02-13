@@ -3,47 +3,59 @@ import { API_TIMEOUT } from '@/utils/constants';
 import { clearAuthToken, getAuthToken } from '@/utils/helpers';
 
 const resolveBaseUrl = () => {
-    const envValue = String(import.meta.env.VITE_API_URL || '').trim();
-    if (envValue) {
-        return envValue.replace(/\/+$/, '');
-    }
+  const envValue = String(import.meta.env.VITE_API_URL || '').trim();
 
-    if (typeof window !== 'undefined' && window.location?.origin) {
-        return window.location.origin;
-    }
+  if (envValue) {
+    return envValue.replace(/\/+$/, '');
+  }
 
-    return 'http://localhost:5000';
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+
+  return import.meta.env.DEV
+    ? 'http://localhost:5000'
+    : '';
 };
 
 const BASE_URL = resolveBaseUrl();
 
+if (import.meta.env.DEV) {
+  console.log('API BASE URL:', BASE_URL);
+}
+
 const axiosInstance = axios.create({
-    baseURL: `${BASE_URL}/api`,
-    headers: {
-        'Content-Type': 'application/json',
-    },
-    timeout: API_TIMEOUT,
+  baseURL: `${BASE_URL}/api`,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  timeout: API_TIMEOUT,
 });
 
 axiosInstance.interceptors.request.use(
-    (config) => {
-        const token = getAuthToken();
-        if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-    },
-    (error) => Promise.reject(error),
+  (config) => {
+    const token = getAuthToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
 );
 
 axiosInstance.interceptors.response.use(
-    (response) => response,
-    (error) => {
-        if (error?.response?.status === 401) {
-            clearAuthToken();
-        }
-        return Promise.reject(error);
-    },
+  (response) => response,
+  (error) => {
+    if (!error.response) {
+      console.error('Network error / Server not reachable');
+    }
+
+    if (error?.response?.status === 401) {
+      clearAuthToken();
+    }
+
+    return Promise.reject(error);
+  }
 );
 
 export default axiosInstance;
