@@ -151,7 +151,7 @@ const getResumeOnlyTargets = async ({ normalizedResume, resumeKeywords, resumeDa
 
     try {
         const response = await ai.models.generateContent({
-            model: process.env.GEMINI_MODEL || 'gemini-3-flash-preview',
+            model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
             contents: buildResumeOnlyPrompt({
                 resumeText: normalizedResume.slice(0, 10000),
                 resumeKeywords,
