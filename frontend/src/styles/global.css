@@ -1,0 +1,234 @@
+@import url('https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    --font-body: 'Work Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+    --font-heading: 'Work Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+    font-family: var(--font-body);
+    font-size: 100%;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-body);
+    font-size: 1rem;
+    color: rgb(70, 70, 78);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.01em;
+    color: #111111;
+    font-weight: 800;
+}
+    
+@media (max-width: 640px) {
+    html {
+        font-size: 15px;
+    }
+
+    body {
+        font-size: 0.9375rem;
+        line-height: 1.55;
+    }
+
+    h1 {
+        font-size: 1.95rem;
+        line-height: 1.14;
+    }
+
+    h2 {
+        font-size: 1.6rem;
+        line-height: 1.2;
+    }
+
+    h3 {
+        font-size: 1.28rem;
+        line-height: 1.26;
+    }
+
+    p,
+    label,
+    input,
+    textarea,
+    select,
+    button {
+        font-size: 0.95rem;
+        line-height: 1.45;
+    }
+}
+
+@layer utilities {
+    .font-ui-heading {
+        font-family: var(--font-heading);
+    }
+
+    .font-ui-body {
+        font-family: var(--font-body);
+    }
+}
+
+@layer components {
+    .btn-ui {
+        @apply inline-flex items-center justify-center rounded-2xl px-5 py-2.5 text-sm font-semibold shadow-sm;
+        @apply transition-all duration-300 ease-out;
+        @apply hover:-translate-y-0.5 hover:shadow-md;
+        @apply active:translate-y-0 active:shadow-sm;
+        @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+    }
+
+    .btn-ui-primary {
+        @apply bg-primary text-primary-foreground;
+        @apply hover:brightness-110;
+    }
+
+    .btn-ui-secondary {
+        @apply border border-foreground/25 bg-background/75 text-foreground;
+        @apply hover:border-primary hover:text-primary;
+    }
+
+    .btn-ui-icon {
+        @apply rounded-2xl transition-all duration-300 ease-out;
+        @apply hover:-translate-y-0.5 hover:shadow-md;
+        @apply active:translate-y-0;
+        @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+    }
+}
+
+@media (max-width: 640px) {
+    .btn-ui-service {
+        font-size: 0.78rem;
+        line-height: 1rem;
+        padding: 0.5rem 0.85rem;
+        border-radius: 0.9rem;
+    }
+
+    .resumeiq-mobile-lines {
+        display: -webkit-box;
+        -webkit-line-clamp: 5;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+}
+
+@media (max-width: 370px) {
+    .btn-ui-service {
+        font-size: 0.72rem;
+        padding: 0.42rem 0.72rem;
+        border-radius: 0.78rem;
+    }
+}
+
+@media (max-width: 350px) {
+    .ats-scanner-page .ats-mobile-field,
+    .resume-builder-page input:not([type='checkbox']):not([type='radio']),
+    .resume-builder-page textarea,
+    .resume-builder-page select {
+        font-size: 0.75rem;
+        line-height: 1.2rem;
+    }
+
+    .ats-scanner-page .ats-mobile-file {
+        padding: 0.36rem 0.55rem;
+        border-radius: 0.6rem;
+    }
+
+    .ats-scanner-page .ats-mobile-file::file-selector-button {
+        font-size: 0.68rem;
+        padding: 0.3rem 0.56rem;
+        border-radius: 0.55rem;
+    }
+
+    .ats-scanner-page button,
+    .resume-builder-page button {
+        letter-spacing: 0.01em;
+    }
+}
+
+
+
+@layer base {
+  :root {
+        --background: 220 27% 98%;
+        --foreground: 240 6% 29%;
+        --card: 0 0% 100%;
+        --card-foreground: 240 6% 29%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 240 6% 29%;
+        --primary: 227 86% 57%;
+        --primary-foreground: 210 40% 99%;
+        --secondary: 220 30% 94%;
+        --secondary-foreground: 222 30% 18%;
+        --muted: 220 26% 93%;
+        --muted-foreground: 222 14% 41%;
+        --accent: 220 28% 92%;
+        --accent-foreground: 222 30% 18%;
+        --destructive: 0 84.2% 60.2%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 220 20% 85%;
+        --input: 220 20% 85%;
+        --ring: 227 86% 57%;
+        --chart-1: 12 76% 61%;
+        --chart-2: 173 58% 39%;
+        --chart-3: 197 37% 24%;
+        --chart-4: 43 74% 66%;
+        --chart-5: 27 87% 67%;
+        --radius: 0.5rem;
+    }
+  .dark {
+        --background: 223 47% 12%;
+        --foreground: 210 40% 98%;
+        --card: 223 42% 15%;
+        --card-foreground: 210 40% 97%;
+        --popover: 223 42% 15%;
+        --popover-foreground: 210 40% 97%;
+        --primary: 199 89% 62%;
+        --primary-foreground: 223 47% 14%;
+        --secondary: 223 34% 21%;
+        --secondary-foreground: 210 40% 96%;
+        --muted: 223 30% 20%;
+        --muted-foreground: 215 18% 72%;
+        --accent: 223 32% 22%;
+        --accent-foreground: 210 40% 96%;
+        --destructive: 0 62.8% 30.6%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 223 24% 28%;
+        --input: 223 24% 28%;
+        --ring: 199 89% 62%;
+        --chart-1: 199 89% 62%;
+        --chart-2: 160 70% 46%;
+        --chart-3: 30 84% 56%;
+        --chart-4: 245 74% 68%;
+        --chart-5: 338 78% 61%;
+    }
+}
+
+
+
+@layer base {
+  * {
+    @apply border-border;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+}

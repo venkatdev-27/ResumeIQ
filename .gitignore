@@ -1,0 +1,59 @@
+# ======================
+# Node modules (both frontend & backend)
+# ======================
+node_modules/
+*/node_modules/
+
+# ======================
+# Environment files
+# ======================
+.env
+.env.*
+!.env.example
+
+# ======================
+# Build output
+# ======================
+dist/
+build/
+.vite/
+
+# ======================
+# Backend uploads (multer local storage)
+# ======================
+backend/uploads/
+
+# ======================
+# Logs
+# ======================
+logs
+*.log
+npm-debug.log*
+
+# ======================
+# OS files
+# ======================
+.DS_Store
+Thumbs.db
+
+# ======================
+# IDE files
+# ======================
+.vscode/
+.idea/
+
+# ======================
+# Docker override files
+# ======================
+docker-compose.override.yml
+
+# ======================
+# Test coverage
+# ======================
+coverage/
+
+# ======================
+# Temporary files
+# ======================
+tmp/
+temp/
