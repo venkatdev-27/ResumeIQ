@@ -1,7 +1,6 @@
 const fs = require('fs/promises');
 const axios = require('axios');
 const mongoose = require('mongoose');
-const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 
 const cloudinary = require('../config/cloudinary');
@@ -223,10 +222,14 @@ const generateResumePdf = asyncHandler(async (req, res) => {
         throw new AppError('HTML content is required.', 400);
     }
 
-    const pdfBuffer = await generatePdfFromHtml(html);
-    setPdfHeaders(res, fileName, pdfBuffer.length);
+    const { stream, contentLength, cleanup } = await generatePdfFromHtml(html);
+    setPdfHeaders(res, fileName, contentLength);
     res.status(200);
-    return pipeline(Readable.from(pdfBuffer), res);
+    try {
+        await pipeline(stream, res);
+    } finally {
+        await cleanup();
+    }
 });
 
 const escapeHtml = (value = '') =>
@@ -321,8 +324,8 @@ const generateHtmlFromResumeData = (resumeData = {}, templateName = 'template1')
 const streamCloudinaryFileToResponse = async ({ url, res, fileName }) => {
     const response = await axios.get(url, {
         responseType: 'stream',
-        timeout: 60_000,
-        maxRedirects: 5,
+        timeout: 120_000,
+        maxRedirects: 10,
         validateStatus: (status) => status >= 200 && status < 400,
     });
 
@@ -369,10 +372,14 @@ const downloadResume = asyncHandler(async (req, res) => {
     }
 
     const html = generateHtmlFromResumeData(resume.resumeData, resume.templateName);
-    const pdfBuffer = await generatePdfFromHtml(html);
-    setPdfHeaders(res, fileName, pdfBuffer.length);
+    const { stream, contentLength, cleanup } = await generatePdfFromHtml(html);
+    setPdfHeaders(res, fileName, contentLength);
     res.status(200);
-    await pipeline(Readable.from(pdfBuffer), res);
+    try {
+        await pipeline(stream, res);
+    } finally {
+        await cleanup();
+    }
 });
 
 module.exports = {

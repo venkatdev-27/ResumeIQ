@@ -49,10 +49,14 @@ const startServer = async () => {
     scheduleDbReconnect();
 
     const port = Number(process.env.PORT) || 5000;
-    app.listen(port, '0.0.0.0', () => {
+    const server = app.listen(port, '0.0.0.0', () => {
         // eslint-disable-next-line no-console
         console.log(`Server running on port ${port}`);
     });
+
+    server.timeout = 0;
+    server.keepAliveTimeout = 65_000;
+    server.headersTimeout = 66_000;
 };
 
 startServer().catch((error) => {
