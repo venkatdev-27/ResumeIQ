@@ -178,7 +178,7 @@ const toSuggestions = (improvedResume) => {
 
 export const fetchAISuggestions = createAsyncThunk(
     'ai/fetchAISuggestions',
-    async ({ jobDescription }, { getState, rejectWithValue }) => {
+    async ({ jobDescription, atsContext = null } = {}, { getState, rejectWithValue }) => {
         try {
             const state = getState();
             const normalizedResumeId =
@@ -187,10 +187,26 @@ export const fetchAISuggestions = createAsyncThunk(
                     : undefined;
             const resumeData = state.resume.resumeData;
             const sanitizedResumeData = sanitizeResumeDataForAIRequest(resumeData);
-            const atsScore = state.ats.score;
-            const matchedKeywords = state.ats.matchedKeywords || [];
-            const missingKeywords = state.ats.missingKeywords || [];
-            const missingSkills = state.ats.missingSkills || [];
+            const safeAtsContext = atsContext && typeof atsContext === 'object' ? atsContext : {};
+            const atsScore = safeAtsContext.score ?? state.ats.score;
+            const matchedKeywords = normalizeList(
+                Array.isArray(safeAtsContext.matchedKeywords)
+                    ? safeAtsContext.matchedKeywords
+                    : state.ats.matchedKeywords || [],
+                60,
+            );
+            const missingKeywords = normalizeList(
+                Array.isArray(safeAtsContext.missingKeywords)
+                    ? safeAtsContext.missingKeywords
+                    : state.ats.missingKeywords || [],
+                60,
+            );
+            const missingSkills = normalizeList(
+                Array.isArray(safeAtsContext.missingSkills)
+                    ? safeAtsContext.missingSkills
+                    : state.ats.missingSkills || [],
+                60,
+            );
 
             if (!resumeData || typeof resumeData !== 'object') {
                 throw new Error('Resume data is required before requesting AI suggestions.');
