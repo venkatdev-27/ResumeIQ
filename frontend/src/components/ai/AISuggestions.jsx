@@ -44,8 +44,8 @@ function AISuggestions({
     return (
         <div
             className={cn(
-                'rounded-none border-0 bg-transparent p-0 shadow-none',
-                !embedded && 'rounded-2xl border border-[#d5d9e1] bg-[#eceef2] p-4',
+                'w-full min-w-0 max-w-full overflow-x-hidden rounded-none border-0 bg-transparent p-0 shadow-none',
+                !embedded && 'rounded-2xl border border-[#d5d9e1] bg-[#eceef2] p-4 max-[350px]:rounded-xl max-[350px]:p-2.5',
                 className,
             )}
         >
@@ -54,22 +54,32 @@ function AISuggestions({
 
             {status === 'succeeded' ? (
                 hasData ? (
-                    <div className="mt-3 space-y-3">
+                    <div className="mt-3 space-y-3 max-[350px]:space-y-2.5">
                         {improvedResume.summary ? (
-                            <div className={cn('rounded-none border-0 bg-transparent p-0', !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3')}>
+                            <div
+                                className={cn(
+                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
+                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
+                                )}
+                            >
                                 <h4 className="mb-1 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Improved Summary</h4>
-                                <p className="text-sm text-[#4b4b53] max-[350px]:text-xs">{improvedResume.summary}</p>
+                                <p className="whitespace-pre-line break-words text-sm text-[#4b4b53] max-[350px]:text-xs">{improvedResume.summary}</p>
                             </div>
                         ) : null}
 
                         {(improvedResume.skills || []).length ? (
-                            <div className={cn('rounded-none border-0 bg-transparent p-0', !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3')}>
-                                <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Optimized Skills</h4>
+                            <div
+                                className={cn(
+                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
+                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
+                                )}
+                            >
+                                <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Optimized Skills (Missing In Resume)</h4>
                                 <div className="flex flex-wrap gap-2">
                                     {improvedResume.skills.map((item, index) => (
                                         <span
                                             key={`ai-skill-${item}-${index}`}
-                                            className="rounded-full bg-[#dfe6ff] px-2.5 py-1 text-xs text-[#2f52e8] max-[350px]:px-2 max-[350px]:py-0.5 max-[350px]:text-[11px]"
+                                            className="max-w-full break-all rounded-full bg-[#dfe6ff] px-2.5 py-1 text-xs text-[#2f52e8] max-[350px]:px-2 max-[350px]:py-0.5 max-[350px]:text-[11px]"
                                         >
                                             {item}
                                         </span>
@@ -79,57 +89,82 @@ function AISuggestions({
                         ) : null}
 
                         {(improvedResume.certifications || []).length ? (
-                            <div className={cn('rounded-none border-0 bg-transparent p-0', !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3')}>
+                            <div
+                                className={cn(
+                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
+                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
+                                )}
+                            >
                                 <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Certifications</h4>
                                 <ul className="list-inside list-disc space-y-1 text-xs text-[#4b4b53] max-[350px]:text-[11px]">
                                     {improvedResume.certifications.map((item, index) => (
-                                        <li key={`ai-cert-${index}`}>{item}</li>
+                                        <li key={`ai-cert-${index}`} className="break-words">{item}</li>
                                     ))}
                                 </ul>
                             </div>
                         ) : null}
 
                         {(improvedResume.achievements || []).length ? (
-                            <div className={cn('rounded-none border-0 bg-transparent p-0', !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3')}>
+                            <div
+                                className={cn(
+                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
+                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
+                                )}
+                            >
                                 <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Achievements</h4>
                                 <ul className="list-inside list-disc space-y-1 text-xs text-[#4b4b53] max-[350px]:text-[11px]">
                                     {improvedResume.achievements.map((item, index) => (
-                                        <li key={`ai-achievement-${index}`}>{item}</li>
+                                        <li key={`ai-achievement-${index}`} className="break-words">{item}</li>
                                     ))}
                                 </ul>
                             </div>
                         ) : null}
 
                         {(improvedResume.hobbies || []).length ? (
-                            <div className={cn('rounded-none border-0 bg-transparent p-0', !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3')}>
+                            <div
+                                className={cn(
+                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
+                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
+                                )}
+                            >
                                 <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Hobbies</h4>
                                 <ul className="list-inside list-disc space-y-1 text-xs text-[#4b4b53] max-[350px]:text-[11px]">
                                     {improvedResume.hobbies.map((item, index) => (
-                                        <li key={`ai-hobby-${index}`}>{item}</li>
+                                        <li key={`ai-hobby-${index}`} className="break-words">{item}</li>
                                     ))}
                                 </ul>
                             </div>
                         ) : null}
 
                         {(improvedResume.atsFeedback?.whyScoreIsLower || []).length ? (
-                            <div className={cn('rounded-none border-0 bg-transparent p-0', !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3')}>
+                            <div
+                                className={cn(
+                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
+                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
+                                )}
+                            >
                                 <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Why Score Is Lower</h4>
                                 <ul className="list-inside list-disc space-y-1 text-xs text-[#4b4b53] max-[350px]:text-[11px]">
                                     {improvedResume.atsFeedback.whyScoreIsLower.map((item, index) => (
-                                        <li key={`lower-${index}`}>{item}</li>
+                                        <li key={`lower-${index}`} className="break-words">{item}</li>
                                     ))}
                                 </ul>
                             </div>
                         ) : null}
 
                         {(improvedResume.atsFeedback?.missingKeywords || []).length ? (
-                            <div className={cn('rounded-none border-0 bg-transparent p-0', !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3')}>
+                            <div
+                                className={cn(
+                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
+                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
+                                )}
+                            >
                                 <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Missing Keywords</h4>
                                 <div className="flex flex-wrap gap-2">
                                     {improvedResume.atsFeedback.missingKeywords.map((item, index) => (
                                         <span
                                             key={`missing-keyword-${item}-${index}`}
-                                            className="rounded-full bg-[#f6c6cc] px-2.5 py-1 text-xs text-[#8a1d2b] max-[350px]:px-2 max-[350px]:py-0.5 max-[350px]:text-[11px]"
+                                            className="max-w-full break-all rounded-full bg-[#f6c6cc] px-2.5 py-1 text-xs text-[#8a1d2b] max-[350px]:px-2 max-[350px]:py-0.5 max-[350px]:text-[11px]"
                                         >
                                             {item}
                                         </span>
@@ -139,13 +174,18 @@ function AISuggestions({
                         ) : null}
 
                         {(improvedResume.atsFeedback?.missingSkills || []).length ? (
-                            <div className={cn('rounded-none border-0 bg-transparent p-0', !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3')}>
+                            <div
+                                className={cn(
+                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
+                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
+                                )}
+                            >
                                 <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Missing Skills</h4>
                                 <div className="flex flex-wrap gap-2">
                                     {improvedResume.atsFeedback.missingSkills.map((item, index) => (
                                         <span
                                             key={`missing-skill-${item}-${index}`}
-                                            className="rounded-full bg-[#ffe7bf] px-2.5 py-1 text-xs text-[#8a5600] max-[350px]:px-2 max-[350px]:py-0.5 max-[350px]:text-[11px]"
+                                            className="max-w-full break-all rounded-full bg-[#ffe7bf] px-2.5 py-1 text-xs text-[#8a5600] max-[350px]:px-2 max-[350px]:py-0.5 max-[350px]:text-[11px]"
                                         >
                                             {item}
                                         </span>
@@ -155,11 +195,16 @@ function AISuggestions({
                         ) : null}
 
                         {(improvedResume.atsFeedback?.improvementSteps || []).length ? (
-                            <div className={cn('rounded-none border-0 bg-transparent p-0', !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3')}>
+                            <div
+                                className={cn(
+                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
+                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
+                                )}
+                            >
                                 <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Improvement Steps</h4>
                                 <ul className="list-inside list-disc space-y-1 text-xs text-[#4b4b53] max-[350px]:text-[11px]">
                                     {improvedResume.atsFeedback.improvementSteps.map((item, index) => (
-                                        <li key={`step-${index}`}>{item}</li>
+                                        <li key={`step-${index}`} className="break-words">{item}</li>
                                     ))}
                                 </ul>
                             </div>
@@ -171,7 +216,7 @@ function AISuggestions({
                             <li
                                 key={item.id}
                                 className={cn(
-                                    'rounded-none border-0 bg-transparent px-0 py-0 text-sm text-[#4b4b53] max-[350px]:text-xs',
+                                    'rounded-none border-0 bg-transparent px-0 py-0 text-sm text-[#4b4b53] max-[350px]:text-xs break-words',
                                     !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] px-3 py-2',
                                 )}
                             >
