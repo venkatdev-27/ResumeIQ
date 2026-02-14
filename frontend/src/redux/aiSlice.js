@@ -93,6 +93,15 @@ const sanitizeResumeDataForAIRequest = (resumeData = {}) => {
 
 const normalizeAiPayload = (payload = {}, fallbackScore = null) => {
     const skills = Array.isArray(payload.skills) ? payload.skills.filter((item) => typeof item === 'string' && item.trim()) : [];
+    const certifications = Array.isArray(payload.certifications)
+        ? payload.certifications.filter((item) => typeof item === 'string' && item.trim())
+        : [];
+    const achievements = Array.isArray(payload.achievements)
+        ? payload.achievements.filter((item) => typeof item === 'string' && item.trim())
+        : [];
+    const hobbies = Array.isArray(payload.hobbies)
+        ? payload.hobbies.filter((item) => typeof item === 'string' && item.trim())
+        : [];
     const feedback = payload.atsFeedback || {};
 
     return {
@@ -101,6 +110,9 @@ const normalizeAiPayload = (payload = {}, fallbackScore = null) => {
         projects: Array.isArray(payload.projects) ? payload.projects : [],
         internships: Array.isArray(payload.internships) ? payload.internships : [],
         skills,
+        certifications,
+        achievements,
+        hobbies,
         atsFeedback: {
             currentScore: feedback.currentScore ?? fallbackScore ?? '',
             whyScoreIsLower: Array.isArray(feedback.whyScoreIsLower) ? feedback.whyScoreIsLower : [],
@@ -119,32 +131,38 @@ const toSuggestions = (improvedResume) => {
     }
 
     improvedResume.workExperience.forEach((item, index) => {
-        if (!item?.improvedDescription) {
+        const bulletText = Array.isArray(item?.bullets) ? item.bullets.filter(Boolean).join(' | ') : '';
+        const improvedText = item?.improvedDescription || bulletText;
+        if (!improvedText) {
             return;
         }
         suggestions.push({
             id: `work-${index}`,
-            text: `${item.role || 'Role'} ${item.company ? `at ${item.company}` : ''}: ${item.improvedDescription}`,
+            text: `${item.role || 'Role'} ${item.company ? `at ${item.company}` : ''}: ${improvedText}`,
         });
     });
 
     improvedResume.projects.forEach((item, index) => {
-        if (!item?.improvedDescription) {
+        const bulletText = Array.isArray(item?.bullets) ? item.bullets.filter(Boolean).join(' | ') : '';
+        const improvedText = item?.improvedDescription || bulletText;
+        if (!improvedText) {
             return;
         }
         suggestions.push({
             id: `project-${index}`,
-            text: `${item.title || 'Project'}: ${item.improvedDescription}`,
+            text: `${item.title || 'Project'}: ${improvedText}`,
         });
     });
 
     improvedResume.internships.forEach((item, index) => {
-        if (!item?.improvedDescription) {
+        const bulletText = Array.isArray(item?.bullets) ? item.bullets.filter(Boolean).join(' | ') : '';
+        const improvedText = item?.improvedDescription || bulletText;
+        if (!improvedText) {
             return;
         }
         suggestions.push({
             id: `internship-${index}`,
-            text: `${item.company || 'Internship'}: ${item.improvedDescription}`,
+            text: `${item.company || 'Internship'}: ${improvedText}`,
         });
     });
 
