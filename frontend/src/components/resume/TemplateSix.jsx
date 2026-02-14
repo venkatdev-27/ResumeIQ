@@ -67,6 +67,17 @@ function TemplateSix({ resumeData, formData }) {
                             </ul>
                         </section>
                     ) : null}
+
+                    {data.hobbies.length > 0 ? (
+                        <section className="mt-2 space-y-1">
+                            <h2 className="border-b border-white/50 pb-0.5 text-xs font-bold uppercase tracking-wide">Hobbies</h2>
+                            <ul className="list-disc space-y-1 pl-4 text-sm">
+                                {data.hobbies.map((item) => (
+                                    <li key={item} className="break-words">{item}</li>
+                                ))}
+                            </ul>
+                        </section>
+                    ) : null}
                 </aside>
 
                 <main className="min-w-0 space-y-2">
@@ -134,7 +145,6 @@ function TemplateSix({ resumeData, formData }) {
 }
 
 export default React.memo(TemplateSix);
-
 
 
 
