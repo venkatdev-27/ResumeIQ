@@ -8,7 +8,7 @@ function Skills(props) {
             title="Skills"
             placeholder="React, Redux Toolkit, Node.js, MongoDB, Docker, AWS"
             description="List the core skills that match your target role."
-            helperText="Required. Use role-relevant technical and domain skills separated by dot ."
+            helperText="Required. Use role-relevant technical and domain skills separated by commas."
             hideTitle={true}
         />
     );
