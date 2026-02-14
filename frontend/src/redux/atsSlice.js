@@ -1,11 +1,17 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
 import { fetchATSScoreAPI } from '@/api/atsAPI';
-import { getErrorMessage, normalizeStringList, resumeFormToText, unwrapApiPayload } from '@/utils/helpers';
+import { getErrorMessage, normalizeStringList, unwrapApiPayload } from '@/utils/helpers';
 
 export const fetchATSScore = createAsyncThunk('ats/fetchATSScore', async (args = {}, { getState, rejectWithValue }) => {
     try {
         const state = getState();
-        const resumeText = state.resume.uploadedText || resumeFormToText(state.resume.form);
+        const resumeText = typeof state.resume.uploadedText === 'string'
+            ? state.resume.uploadedText
+            : '';
+        const hasUploadedPdfContext = Boolean(
+            state.resume.uploadedFile?.name ||
+            String(state.resume.cloudinaryUrl || '').trim(),
+        );
         const normalizedResumeId =
             typeof state.resume.resumeId === 'string' && state.resume.resumeId.trim()
                 ? state.resume.resumeId.trim()
@@ -13,18 +19,17 @@ export const fetchATSScore = createAsyncThunk('ats/fetchATSScore', async (args =
         const resumeDataSkills = Array.isArray(state.resume.resumeData?.skills)
             ? state.resume.resumeData.skills
             : [];
-        const formSkillsText = typeof state.resume.form?.skills === 'string'
-            ? state.resume.form.skills
-            : '';
-        const userSkills = resumeDataSkills.length
-            ? resumeDataSkills.join(', ')
-            : formSkillsText;
+        const userSkills = resumeDataSkills.length ? resumeDataSkills.join(', ') : '';
         const jobDescription = typeof args?.jobDescription === 'string'
             ? args.jobDescription
             : '';
 
-        if (!resumeText?.trim()) {
-            throw new Error('Upload or create a resume before checking ATS score.');
+        if (!hasUploadedPdfContext) {
+            throw new Error('Upload a resume PDF in ATS Scanner before checking ATS score.');
+        }
+
+        if (!resumeText?.trim() && !normalizedResumeId) {
+            throw new Error('Uploaded resume text is unavailable. Re-upload the PDF and try again.');
         }
 
         const requestPayload = {

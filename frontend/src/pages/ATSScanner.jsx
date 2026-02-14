@@ -18,7 +18,10 @@ function ATSScanner() {
     const [jobDescription, setJobDescription] = useState('');
     const fileInputId = 'ats-resume-file-input';
 
-    const canAnalyze = useMemo(() => Boolean(resumeId || String(uploadedText || '').trim()), [resumeId, uploadedText]);
+    const canAnalyze = useMemo(
+        () => Boolean((String(uploadedText || '').trim() || resumeId) && (uploadedFile?.name || String(cloudinaryUrl || '').trim())),
+        [uploadedText, resumeId, uploadedFile, cloudinaryUrl],
+    );
 
     const handleFileChange = (event) => {
         const file = event.target.files?.[0] || null;

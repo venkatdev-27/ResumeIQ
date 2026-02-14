@@ -351,20 +351,12 @@ const applyAiImprovementsToResume = (resumeData, improved) => {
     return next;
 };
 
-export const uploadResumePDF = createAsyncThunk('resume/uploadResumePDF', async (file, { getState, rejectWithValue }) => {
+export const uploadResumePDF = createAsyncThunk('resume/uploadResumePDF', async (file, { rejectWithValue }) => {
     try {
         if (!file) {
             throw new Error('Please select a resume PDF file.');
         }
-
-        const state = getState();
-        const resumeText = resumeFormToText(state.resume.form);
-
-        const response = await uploadResumeAPI(file, {
-            resumeText,
-            templateName: state.resume.template,
-            resumeData: state.resume.resumeData,
-        });
+        const response = await uploadResumeAPI(file);
         const data = unwrapApiPayload(response);
 
         const parsed = data.parsedResume || data.parsedData || data.resume || data.extractedData || {};

@@ -10,6 +10,25 @@ const TARGET_SUMMARY_WORDS = 46;
 const TARGET_BULLET_LINES = 3;
 const TARGET_BULLET_WORDS = 14;
 const TARGET_SHORT_LIST_ITEMS = 20;
+const IMPROVEMENT_MODES = Object.freeze({
+    FULL: 'full',
+    ATS_ONLY: 'ats_only',
+});
+const ATS_TARGET_SECTION_KEYS = new Set(['summary', 'workExperience', 'projects', 'internships']);
+const RESUME_TEXT_SECTION_MATCHERS = [
+    { key: 'summary', pattern: /^(professional summary|summary|profile|objective)$/i },
+    { key: 'workExperience', pattern: /^(work experience|professional experience|employment history|experience)$/i },
+    { key: 'projects', pattern: /^(projects|project experience|academic projects|personal projects)$/i },
+    { key: 'internships', pattern: /^(internships?|internship experience|training)$/i },
+];
+const RESUME_TEXT_NON_TARGET_HEADERS = [
+    /^(education|academics?)$/i,
+    /^(skills?|technical skills?)$/i,
+    /^(certifications?)$/i,
+    /^(achievements?)$/i,
+    /^(hobbies?)$/i,
+    /^(contact|personal details?)$/i,
+];
 const ACTION_VERBS = ['Delivered', 'Engineered', 'Implemented', 'Optimized', 'Architected', 'Streamlined', 'Automated', 'Integrated', 'Developed', 'Deployed', 'Enhanced'];
 const SUMMARY_FALLBACK_TOKENS = [
     'enterprise',
@@ -101,6 +120,11 @@ const ensureArrayOfStrings = (value) =>
         : [];
 
 const ensureObject = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+const normalizeImprovementMode = (value = '') => {
+    const mode = String(value || '').trim().toLowerCase();
+    return mode === IMPROVEMENT_MODES.ATS_ONLY ? IMPROVEMENT_MODES.ATS_ONLY : IMPROVEMENT_MODES.FULL;
+};
+const isAtsOnlyMode = (value = '') => normalizeImprovementMode(value) === IMPROVEMENT_MODES.ATS_ONLY;
 
 const hasAnyText = (...values) => values.some((value) => Boolean(String(value || '').trim()));
 
@@ -238,6 +262,167 @@ const compactToOneLine = (value = '') =>
     normalizeLineBreaks(value)
         .replace(/\s+/g, ' ')
         .trim();
+
+const normalizeHeadingCandidate = (value = '') =>
+    String(value || '')
+        .toLowerCase()
+        .replace(/[^a-z\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+const detectSectionKeyFromHeading = (line = '') => {
+    const normalizedHeading = normalizeHeadingCandidate(line);
+    if (!normalizedHeading || normalizedHeading.length > 48) {
+        return null;
+    }
+
+    const targetMatch = RESUME_TEXT_SECTION_MATCHERS.find(({ pattern }) => pattern.test(normalizedHeading));
+    if (targetMatch) {
+        return targetMatch.key;
+    }
+
+    const nonTargetHeader = RESUME_TEXT_NON_TARGET_HEADERS.some((pattern) => pattern.test(normalizedHeading));
+    return nonTargetHeader ? 'other' : null;
+};
+
+const parseRoleAndCompanyFromHeading = (value = '') => {
+    const heading = compactToOneLine(value);
+    if (!heading) {
+        return { role: '', company: '' };
+    }
+
+    const separators = [/\s+at\s+/i, /\s+-\s+/i, /\s+\|\s+/i];
+    for (const separatorPattern of separators) {
+        if (!separatorPattern.test(heading)) {
+            continue;
+        }
+
+        const parts = heading.split(separatorPattern).map((item) => compactToOneLine(item)).filter(Boolean);
+        if (parts.length >= 2) {
+            return {
+                role: truncateText(parts[0], 160),
+                company: truncateText(parts.slice(1).join(' '), 160),
+            };
+        }
+    }
+
+    return {
+        role: truncateText(heading, 160),
+        company: '',
+    };
+};
+
+const toSectionTextBlocks = (lines = [], maxBlocks = 20) => {
+    const normalized = normalizeLineBreaks((Array.isArray(lines) ? lines : []).join('\n'));
+    if (!normalized) {
+        return [];
+    }
+
+    const blocks = normalized
+        .split(/\n{2,}/)
+        .map((item) => normalizeLineBreaks(item))
+        .filter(Boolean);
+
+    return (blocks.length ? blocks : [normalized]).slice(0, maxBlocks);
+};
+
+const extractAtsFocusedResumeDataFromText = (resumeText = '') => {
+    const normalizedText = normalizeLineBreaks(resumeText || '');
+    if (!normalizedText) {
+        return {
+            summary: '',
+            workExperience: [],
+            projects: [],
+            internships: [],
+        };
+    }
+
+    const lines = normalizedText
+        .split('\n')
+        .map((line) => String(line || '').replace(/\t/g, ' ').trimEnd());
+    const sectionBuckets = {
+        summary: [],
+        workExperience: [],
+        projects: [],
+        internships: [],
+    };
+    const introLines = [];
+
+    let activeSection = null;
+
+    for (const rawLine of lines) {
+        const trimmedLine = rawLine.trim();
+        const detectedSection = detectSectionKeyFromHeading(trimmedLine);
+
+        if (detectedSection && detectedSection !== 'other') {
+            activeSection = detectedSection;
+            continue;
+        }
+
+        if (detectedSection === 'other') {
+            activeSection = null;
+            continue;
+        }
+
+        if (activeSection && ATS_TARGET_SECTION_KEYS.has(activeSection)) {
+            sectionBuckets[activeSection].push(trimmedLine);
+            continue;
+        }
+
+        if (trimmedLine) {
+            introLines.push(trimmedLine);
+        }
+    }
+
+    const summaryFromSection = normalizeLineBreaks(sectionBuckets.summary.join('\n'));
+    const summaryFromIntro = introLines
+        .filter((line) => tokenizeWords(line).length >= 5)
+        .slice(0, TARGET_SUMMARY_LINES)
+        .join('\n');
+
+    const mapWorkLikeBlocks = (blocks = [], type = 'workExperience') =>
+        (Array.isArray(blocks) ? blocks : [])
+            .slice(0, 12)
+            .map((block) => {
+                const blockLines = normalizeLineBreaks(block)
+                    .split('\n')
+                    .map((line) => line.trim())
+                    .filter(Boolean);
+                const headerLine = blockLines[0] || '';
+                const remaining = blockLines.slice(1).join('\n');
+                const description = normalizeLineBreaks(remaining || headerLine);
+                const parsed = parseRoleAndCompanyFromHeading(headerLine);
+
+                if (!description) {
+                    return null;
+                }
+
+                if (type === 'projects') {
+                    return {
+                        name: truncateText(headerLine || 'Project', 180),
+                        techStack: '',
+                        link: '',
+                        description: truncateText(description, 1600),
+                    };
+                }
+
+                return {
+                    company: truncateText(parsed.company, 160),
+                    role: truncateText(parsed.role, 160),
+                    startDate: '',
+                    endDate: '',
+                    description: truncateText(description, 1800),
+                };
+            })
+            .filter(Boolean);
+
+    return {
+        summary: summaryFromSection || summaryFromIntro || '',
+        workExperience: mapWorkLikeBlocks(toSectionTextBlocks(sectionBuckets.workExperience, 18), 'workExperience'),
+        projects: mapWorkLikeBlocks(toSectionTextBlocks(sectionBuckets.projects, 18), 'projects'),
+        internships: mapWorkLikeBlocks(toSectionTextBlocks(sectionBuckets.internships, 12), 'internships'),
+    };
+};
 
 const normalizeOneLineList = (value, max = TARGET_SHORT_LIST_ITEMS) =>
     ensureArrayOfStrings(value)
@@ -979,6 +1164,23 @@ const normalizeSummary = (value = '', resumeData = {}) => {
     return enforceSummaryFormat(finalLines, resumeData);
 };
 
+const normalizeAtsOnlySummary = (value = '') => {
+    const cleaned = normalizeLineBreaks(value).replace(/^[\u2022*-]+\s*/gm, '');
+    if (!cleaned) {
+        return '';
+    }
+
+    const lines = normalizeToLines(cleaned);
+    if (lines.length) {
+        return lines
+            .slice(0, TARGET_SUMMARY_LINES)
+            .map((line) => ensureSentenceEnding(line))
+            .join('\n');
+    }
+
+    return ensureSentenceEnding(compactToOneLine(cleaned));
+};
+
 const toCandidateDescriptionLines = (value = '') => {
     const cleaned = normalizeLineBreaks(value);
     if (!cleaned) {
@@ -1073,7 +1275,13 @@ const buildContextFallbackBullets = (contextLabel = '') => {
     ];
 };
 
-const normalizeBulletList = ({ bullets = [], text = '', fallbackText = '', contextLabel = '' }) => {
+const normalizeBulletList = ({
+    bullets = [],
+    text = '',
+    fallbackText = '',
+    contextLabel = '',
+    allowSyntheticFallback = true,
+}) => {
     const fromArray = ensureArrayOfStrings(bullets).map((item) => normalizeBulletItem(item)).filter(Boolean);
     const fromText = toCandidateDescriptionLines(text);
     const fallbackLines = toCandidateDescriptionLines(fallbackText);
@@ -1082,19 +1290,25 @@ const normalizeBulletList = ({ bullets = [], text = '', fallbackText = '', conte
 
     let mergedLines = dedupeLines([...fromArray, ...fromText, ...fallbackLines]).slice(0, TARGET_BULLET_LINES);
 
-    if (mergedLines.length < TARGET_BULLET_LINES) {
+    if (mergedLines.length < TARGET_BULLET_LINES && allowSyntheticFallback) {
         const expandedLines = expandDescriptionLines([...fromText, ...fallbackLines]);
         mergedLines = dedupeLines([...mergedLines, ...expandedLines]).slice(0, TARGET_BULLET_LINES);
     }
 
-    if (mergedLines.length < TARGET_BULLET_LINES) {
+    if (mergedLines.length < TARGET_BULLET_LINES && allowSyntheticFallback) {
         const generated = buildContextFallbackBullets(contextLabel);
         mergedLines = dedupeLines([...mergedLines, ...generated]).slice(0, TARGET_BULLET_LINES);
     }
 
-    const fixedLines = fillToFixedLineCount(mergedLines, TARGET_BULLET_LINES, buildContextFallbackBullets(contextLabel), {
-        allowVerbRewrites: true,
-    });
+    if (!mergedLines.length) {
+        return [];
+    }
+
+    const fixedLines = allowSyntheticFallback
+        ? fillToFixedLineCount(mergedLines, TARGET_BULLET_LINES, buildContextFallbackBullets(contextLabel), {
+              allowVerbRewrites: true,
+          })
+        : mergedLines;
 
     return buildUniqueBulletLines({
         lines: fixedLines.map((line) => normalizeBulletItem(line)),
@@ -1118,7 +1332,7 @@ const deriveProfessionFromSourceItems = (sourceItems = []) => {
     return firstRole || 'Technology Professional';
 };
 
-const normalizeWorkExperienceSection = ({ payloadItems, sourceItems, profession = '' }) => {
+const normalizeWorkExperienceSection = ({ payloadItems, sourceItems, profession = '', allowSyntheticFallback = true }) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
     const safeSourceItems = Array.isArray(sourceItems) ? sourceItems : [];
     const effectiveProfession = compactToOneLine(profession) || deriveProfessionFromSourceItems(safeSourceItems);
@@ -1135,6 +1349,7 @@ const normalizeWorkExperienceSection = ({ payloadItems, sourceItems, profession 
                     bullets: safePayload.bullets,
                     text: safePayload.improvedDescription || safePayload.description || '',
                     fallbackText: sourceItem.description || '',
+                    allowSyntheticFallback,
                     contextLabel: buildSectionContextLabel({
                         profession: effectiveProfession,
                         sectionLabel: 'work experience',
@@ -1147,7 +1362,7 @@ const normalizeWorkExperienceSection = ({ payloadItems, sourceItems, profession 
         .filter((item) => hasAnyText(item.company, item.role, ...item.bullets));
 };
 
-const normalizeProjectsSection = ({ payloadItems, sourceItems, profession = '' }) => {
+const normalizeProjectsSection = ({ payloadItems, sourceItems, profession = '', allowSyntheticFallback = true }) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
     const safeSourceItems = Array.isArray(sourceItems) ? sourceItems : [];
     const effectiveProfession = compactToOneLine(profession) || 'Technology Professional';
@@ -1164,6 +1379,7 @@ const normalizeProjectsSection = ({ payloadItems, sourceItems, profession = '' }
                     bullets: safePayload.bullets,
                     text: safePayload.improvedDescription || safePayload.description || '',
                     fallbackText: sourceItem.description || '',
+                    allowSyntheticFallback,
                     contextLabel: buildSectionContextLabel({
                         profession: effectiveProfession,
                         sectionLabel: 'project',
@@ -1176,7 +1392,7 @@ const normalizeProjectsSection = ({ payloadItems, sourceItems, profession = '' }
         .filter((item) => hasAnyText(item.title, ...item.bullets));
 };
 
-const normalizeInternshipsSection = ({ payloadItems, sourceItems, profession = '' }) => {
+const normalizeInternshipsSection = ({ payloadItems, sourceItems, profession = '', allowSyntheticFallback = true }) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
     const safeSourceItems = Array.isArray(sourceItems) ? sourceItems : [];
     const effectiveProfession = compactToOneLine(profession) || deriveProfessionFromSourceItems(safeSourceItems);
@@ -1188,10 +1404,12 @@ const normalizeInternshipsSection = ({ payloadItems, sourceItems, profession = '
 
             return {
                 company: String(safePayload.company || sourceItem.company || '').trim(),
+                role: String(safePayload.role || sourceItem.role || '').trim(),
                 bullets: normalizeBulletList({
                     bullets: safePayload.bullets,
                     text: safePayload.improvedDescription || safePayload.description || '',
                     fallbackText: sourceItem.description || '',
+                    allowSyntheticFallback,
                     contextLabel: buildSectionContextLabel({
                         profession: effectiveProfession,
                         sectionLabel: 'internship',
@@ -1283,6 +1501,26 @@ const sanitizeResumeDataForPrompt = (resumeData = {}) => {
         certifications: normalizeOneLineList(safeResumeData.certifications, TARGET_SHORT_LIST_ITEMS),
         achievements: normalizeOneLineList(safeResumeData.achievements, TARGET_SHORT_LIST_ITEMS),
         hobbies: normalizeOneLineList(safeResumeData.hobbies, TARGET_SHORT_LIST_ITEMS),
+    };
+};
+
+const buildAtsOnlyResumeData = ({ resumeData = {}, resumeText = '' }) => {
+    const base = sanitizeResumeDataForPrompt(resumeData);
+    const extracted = extractAtsFocusedResumeDataFromText(resumeText);
+
+    return {
+        personalDetails: {
+            ...base.personalDetails,
+            summary: truncateText(base.personalDetails.summary || extracted.summary || '', 1600),
+        },
+        workExperience: (base.workExperience.length ? base.workExperience : extracted.workExperience).slice(0, 20),
+        projects: (base.projects.length ? base.projects : extracted.projects).slice(0, 20),
+        internships: (base.internships.length ? base.internships : extracted.internships).slice(0, 20),
+        education: [],
+        skills: [],
+        certifications: [],
+        achievements: [],
+        hobbies: [],
     };
 };
 
@@ -1381,8 +1619,10 @@ const buildSkillKeySet = (skills = []) =>
             .filter(Boolean),
     );
 
-const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext = {}) => {
+const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext = {}, options = {}) => {
     const safePayload = ensureObject(payload);
+    const safeOptions = ensureObject(options);
+    const atsOnly = Boolean(safeOptions.atsOnly);
     const safeAtsFeedback = ensureObject(safePayload.atsFeedback);
     const normalizedContext = normalizeFeedbackContext(feedbackContext);
     const resumeSearchText = buildResumeSearchText(resumeData);
@@ -1404,12 +1644,14 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
         normalizedContext.missingSkills,
         aiMissingSkills,
     );
-    const optimizedSkills = optimizedSkillCandidates
-        .filter((skill) => {
-            const key = toSkillMatchKey(skill);
-            return Boolean(key) && !resumeSkillKeySet.has(key);
-        })
-        .slice(0, 20);
+    const optimizedSkills = atsOnly
+        ? aiMissingSkills.slice(0, 20)
+        : optimizedSkillCandidates
+              .filter((skill) => {
+                  const key = toSkillMatchKey(skill);
+                  return Boolean(key) && !resumeSkillKeySet.has(key);
+              })
+              .slice(0, 20);
     const whyScoreIsLower = ensureArrayOfStrings(
         safeAtsFeedback.whyScoreIsLower || safeAtsFeedback.scoreGaps || safePayload.whyScoreIsLower,
     ).slice(0, 8);
@@ -1428,7 +1670,11 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
 
     if (!improvementSteps.length) {
         if (aiMissingSkills[0]) {
-            improvementSteps.push(`Add ${aiMissingSkills[0]} in skills section.`);
+            improvementSteps.push(
+                atsOnly
+                    ? `Use ${aiMissingSkills[0]} naturally in experience, projects, or internships.`
+                    : `Add ${aiMissingSkills[0]} in skills section.`,
+            );
         }
         if (aiMissingKeywords[0]) {
             improvementSteps.push(`Use ${aiMissingKeywords[0]} in summary or experience bullet points.`);
@@ -1444,39 +1690,47 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
         'Technology Professional';
 
     return {
-        summary: normalizeSummary(safePayload.summary, resumeData),
+        summary: atsOnly
+            ? normalizeAtsOnlySummary(safePayload.summary || resumeData?.personalDetails?.summary || '')
+            : normalizeSummary(safePayload.summary, resumeData),
         workExperience: normalizeWorkExperienceSection({
             payloadItems: safePayload.workExperience,
             sourceItems: resumeData.workExperience,
             profession,
+            allowSyntheticFallback: !atsOnly,
         }),
         projects: normalizeProjectsSection({
             payloadItems: safePayload.projects,
             sourceItems: resumeData.projects,
             profession,
+            allowSyntheticFallback: !atsOnly,
         }),
         internships: normalizeInternshipsSection({
             payloadItems: safePayload.internships,
             sourceItems: resumeData.internships,
             profession,
+            allowSyntheticFallback: !atsOnly,
         }),
         skills: optimizedSkills,
-        certifications:
-            Array.isArray(resumeData.certifications) && resumeData.certifications.length
+        certifications: atsOnly
+            ? []
+            : Array.isArray(resumeData.certifications) && resumeData.certifications.length
                 ? normalizeOneLineList(
                       dedupeLines([...normalizeOneLineList(safePayload.certifications), ...normalizeOneLineList(resumeData.certifications)]),
                       TARGET_SHORT_LIST_ITEMS,
                   )
                 : [],
-        achievements:
-            Array.isArray(resumeData.achievements) && resumeData.achievements.length
+        achievements: atsOnly
+            ? []
+            : Array.isArray(resumeData.achievements) && resumeData.achievements.length
                 ? normalizeOneLineList(
                       dedupeLines([...normalizeOneLineList(safePayload.achievements), ...normalizeOneLineList(resumeData.achievements)]),
                       TARGET_SHORT_LIST_ITEMS,
                   )
                 : [],
-        hobbies:
-            Array.isArray(resumeData.hobbies) && resumeData.hobbies.length
+        hobbies: atsOnly
+            ? []
+            : Array.isArray(resumeData.hobbies) && resumeData.hobbies.length
                 ? normalizeOneLineList(
                       dedupeLines([...normalizeOneLineList(safePayload.hobbies), ...normalizeOneLineList(resumeData.hobbies)]),
                       TARGET_SHORT_LIST_ITEMS,
@@ -1630,7 +1884,73 @@ Return JSON in this exact schema:
 }`;
 };
 
-const parseAIJsonResponse = (rawText, resumeData = {}, feedbackContext = {}) => {
+const buildAtsOnlyResumeImprovePrompt = ({ resumeData, resumeText = '', feedbackContext }) => {
+    const safeContext = normalizeFeedbackContext(feedbackContext);
+    const resumeDataPreview = toSafeAiJson(resumeData, 8_000);
+    const resumeTextPreview = toSafeAiJson(truncateText(resumeText, 8_000), 8_300);
+    const jobDescriptionPreview = toSafeAiJson(safeContext.jobDescription, 2_000);
+    const atsScorePreview = toSafeAiJson(safeContext.atsScore, 200);
+    const matchedKeywordsPreview = toSafeAiJson(safeContext.matchedKeywords, 1_200);
+    const missingKeywordsPreview = toSafeAiJson(safeContext.missingKeywords, 1_200);
+    const missingSkillsPreview = toSafeAiJson(safeContext.missingSkills, 1_200);
+
+    return `You are an ATS resume optimizer focused only on wording improvements.
+
+Scope:
+1. Improve only these sections: summary, workExperience, projects, internships.
+2. Use only content already present in uploaded resume text/data.
+3. Do not invent employers, projects, dates, tools, or metrics.
+4. Keep wording ATS-friendly and concise.
+5. Also return skills as missing/recommended skills based on job description and ATS context.
+6. If a section does not exist, return empty string/array for that section.
+7. Return valid JSON only.
+
+Input:
+resumeData: ${resumeDataPreview}
+uploadedResumeText: ${resumeTextPreview}
+jobDescription: ${jobDescriptionPreview}
+currentAtsScore: ${atsScorePreview}
+matchedKeywords: ${matchedKeywordsPreview}
+knownMissingKeywords: ${missingKeywordsPreview}
+knownMissingSkills: ${missingSkillsPreview}
+
+Return JSON in this exact schema:
+{
+  "summary": "string",
+  "workExperience": [
+    {
+      "company": "string",
+      "role": "string",
+      "bullets": ["string"]
+    }
+  ],
+  "projects": [
+    {
+      "title": "string",
+      "bullets": ["string"]
+    }
+  ],
+  "internships": [
+    {
+      "company": "string",
+      "role": "string",
+      "bullets": ["string"]
+    }
+  ],
+  "skills": ["string"],
+  "atsFeedback": {
+    "currentScore": "string",
+    "whyScoreIsLower": ["string"],
+    "missingKeywords": ["string"],
+    "missingSkills": ["string"],
+    "improvementSteps": ["string"]
+  }
+}`;
+};
+
+const parseAIJsonResponse = (rawText, resumeData = {}, feedbackContext = {}, options = {}) => {
+    const safeOptions = ensureObject(options);
+    const atsOnly = Boolean(safeOptions.atsOnly);
     const parsed = extractJsonCandidate(rawText);
 
     if (!parsed) {
@@ -1639,19 +1959,27 @@ const parseAIJsonResponse = (rawText, resumeData = {}, feedbackContext = {}) => 
         });
     }
 
-    const normalized = normalizeResumeImprovePayload(parsed, resumeData, feedbackContext);
+    const normalized = normalizeResumeImprovePayload(parsed, resumeData, feedbackContext, { atsOnly });
 
-    if (!normalized.summary) {
+    if (!atsOnly && !normalized.summary) {
         throw new AppError('AI response is missing summary.', 502);
     }
 
     return normalized;
 };
 
-const buildFallbackSummary = (resumeData = {}) => {
-    const summary = normalizeSummary(resumeData?.personalDetails?.summary || '', resumeData);
+const buildFallbackSummary = (resumeData = {}, options = {}) => {
+    const safeOptions = ensureObject(options);
+    const atsOnly = Boolean(safeOptions.atsOnly);
+    const summary = atsOnly
+        ? normalizeAtsOnlySummary(resumeData?.personalDetails?.summary || '')
+        : normalizeSummary(resumeData?.personalDetails?.summary || '', resumeData);
     if (summary) {
         return summary;
+    }
+
+    if (atsOnly) {
+        return '';
     }
 
     const generatedLines = buildSummaryGeneratorLines(resumeData);
@@ -1664,7 +1992,9 @@ const buildFallbackSummary = (resumeData = {}) => {
     }).join('\n');
 };
 
-const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {} }) => {
+const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IMPROVEMENT_MODES.FULL }) => {
+    const normalizedMode = normalizeImprovementMode(mode);
+    const atsOnly = isAtsOnlyMode(normalizedMode);
     const safeContext = normalizeFeedbackContext(feedbackContext);
     const resumeSearchText = buildResumeSearchText(resumeData);
     const missingKeywords = filterTermsNotInResume([safeContext.missingKeywords], resumeSearchText, 25);
@@ -1676,26 +2006,37 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {} }) => {
         whyScoreIsLower.push('Important target keywords are underrepresented in summary and experience content.');
     }
     if (missingSkills.length) {
-        whyScoreIsLower.push('Some required technical skills are missing in the dedicated skills section.');
+        whyScoreIsLower.push(
+            atsOnly
+                ? 'Important technical skills are not sufficiently represented in summary, experience, projects, or internships.'
+                : 'Some required technical skills are missing in the dedicated skills section.',
+        );
     }
     if (!whyScoreIsLower.length) {
         whyScoreIsLower.push('Bullet points can be more outcome-focused and ATS-aligned.');
     }
 
-    const improvementSteps = [
-        'Add missing keywords naturally in summary, experience, and project bullets.',
-        'Use action-first bullet points and include measurable outcomes where available.',
-        'Align skills section terms with tools and technologies already used in your work history.',
-    ];
+    const improvementSteps = atsOnly
+        ? [
+              'Add missing keywords naturally in summary, experience, projects, and internship bullets.',
+              'Strengthen action-oriented wording in existing experience, project, and internship lines.',
+              'Map job-description technical terms directly into relevant experience or project outcomes.',
+          ]
+        : [
+              'Add missing keywords naturally in summary, experience, and project bullets.',
+              'Use action-first bullet points and include measurable outcomes where available.',
+              'Align skills section terms with tools and technologies already used in your work history.',
+          ];
 
     return {
-        summary: buildFallbackSummary(resumeData),
+        summary: buildFallbackSummary(resumeData, { atsOnly }),
         workExperience: (Array.isArray(resumeData.workExperience) ? resumeData.workExperience : []).map((item) => ({
             company: String(item?.company || '').trim(),
             role: String(item?.role || '').trim(),
             bullets: normalizeBulletList({
                 text: item?.description || '',
                 fallbackText: item?.description || '',
+                allowSyntheticFallback: !atsOnly,
                 contextLabel: buildSectionContextLabel({
                     profession,
                     sectionLabel: 'work experience',
@@ -1709,6 +2050,7 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {} }) => {
             bullets: normalizeBulletList({
                 text: item?.description || '',
                 fallbackText: item?.description || '',
+                allowSyntheticFallback: !atsOnly,
                 contextLabel: buildSectionContextLabel({
                     profession,
                     sectionLabel: 'project',
@@ -1719,9 +2061,11 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {} }) => {
         })),
         internships: (Array.isArray(resumeData.internships) ? resumeData.internships : []).map((item) => ({
             company: String(item?.company || '').trim(),
+            role: String(item?.role || '').trim(),
             bullets: normalizeBulletList({
                 text: item?.description || '',
                 fallbackText: item?.description || '',
+                allowSyntheticFallback: !atsOnly,
                 contextLabel: buildSectionContextLabel({
                     profession,
                     sectionLabel: 'internship',
@@ -1730,10 +2074,10 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {} }) => {
                 }),
             }),
         })),
-        skills: normalizeSkills(resumeData.skills),
-        certifications: normalizeOneLineList(resumeData.certifications, TARGET_SHORT_LIST_ITEMS),
-        achievements: normalizeOneLineList(resumeData.achievements, TARGET_SHORT_LIST_ITEMS),
-        hobbies: normalizeOneLineList(resumeData.hobbies, TARGET_SHORT_LIST_ITEMS),
+        skills: atsOnly ? missingSkills.slice(0, 20) : normalizeSkills(resumeData.skills),
+        certifications: atsOnly ? [] : normalizeOneLineList(resumeData.certifications, TARGET_SHORT_LIST_ITEMS),
+        achievements: atsOnly ? [] : normalizeOneLineList(resumeData.achievements, TARGET_SHORT_LIST_ITEMS),
+        hobbies: atsOnly ? [] : normalizeOneLineList(resumeData.hobbies, TARGET_SHORT_LIST_ITEMS),
         atsFeedback: {
             currentScore: String(safeContext.atsScore || '').trim(),
             whyScoreIsLower,
@@ -1745,15 +2089,23 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {} }) => {
 };
 
 const improveResumeWithAI = async ({
+    mode = IMPROVEMENT_MODES.FULL,
     resumeData,
+    resumeText = '',
     jobDescription = '',
     atsScore = '',
     matchedKeywords = [],
     missingKeywords = [],
     missingSkills = [],
 }) => {
-
-    const normalizedResumeData = sanitizeResumeDataForPrompt(resumeData);
+    const normalizedMode = normalizeImprovementMode(mode);
+    const atsOnly = isAtsOnlyMode(normalizedMode);
+    const normalizedResumeData = atsOnly
+        ? buildAtsOnlyResumeData({
+              resumeData,
+              resumeText,
+          })
+        : sanitizeResumeDataForPrompt(resumeData);
 
     const feedbackContext = normalizeFeedbackContext({
         jobDescription,
@@ -1763,10 +2115,16 @@ const improveResumeWithAI = async ({
         missingSkills,
     });
 
-    const prompt = buildResumeImprovePrompt({
-        resumeData: normalizedResumeData,
-        feedbackContext,
-    });
+    const prompt = atsOnly
+        ? buildAtsOnlyResumeImprovePrompt({
+              resumeData: normalizedResumeData,
+              resumeText,
+              feedbackContext,
+          })
+        : buildResumeImprovePrompt({
+              resumeData: normalizedResumeData,
+              feedbackContext,
+          });
 
     try {
         const responseText = await requestChatCompletion({
@@ -1780,15 +2138,18 @@ const improveResumeWithAI = async ({
             responseText,
             normalizedResumeData,
             feedbackContext,
+            { atsOnly },
         );
     } catch (_error) {
         return normalizeResumeImprovePayload(
             buildFallbackPayload({
                 resumeData: normalizedResumeData,
                 feedbackContext,
+                mode: normalizedMode,
             }),
             normalizedResumeData,
             feedbackContext,
+            { atsOnly },
         );
     }
 };

@@ -64,7 +64,9 @@ const atsRequestSchema = Joi.object({
 }).or('resumeText', 'resumeId');
 
 const aiImproveSchema = Joi.object({
+    mode: Joi.string().trim().valid('full', 'ats_only').optional().default('full'),
     resumeData: resumeDataSchema.required(),
+    resumeText: Joi.string().trim().allow('').optional().default(''),
     jobDescription: Joi.string().trim().allow('').optional().default(''),
     resumeId: Joi.string().trim().optional(),
     atsScore: Joi.alternatives().try(Joi.number(), Joi.string()).optional().default(''),

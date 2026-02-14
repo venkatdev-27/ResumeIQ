@@ -30,20 +30,14 @@ const normalizeList = (values = [], max = 30) => {
 
 const hasAnyText = (...values) => values.some((value) => Boolean(String(value || '').trim()));
 
-const sanitizeResumeDataForAIRequest = (resumeData = {}) => {
+const sanitizeAtsResumeDataForAIRequest = (resumeData = {}) => {
     const safeResumeData = resumeData && typeof resumeData === 'object' ? resumeData : {};
     const personalDetails = safeResumeData.personalDetails || {};
 
     return {
         personalDetails: {
-            fullName: normalizeText(personalDetails.fullName, 120),
-            email: normalizeText(personalDetails.email, 180),
-            phone: normalizeText(personalDetails.phone, 60),
-            location: normalizeText(personalDetails.location, 120),
             title: normalizeText(personalDetails.title, 120),
             summary: normalizeText(personalDetails.summary, 1600),
-            linkedin: normalizeText(personalDetails.linkedin, 220),
-            website: normalizeText(personalDetails.website, 220),
         },
         workExperience: (Array.isArray(safeResumeData.workExperience) ? safeResumeData.workExperience : [])
             .map((item = {}) => ({
@@ -74,35 +68,19 @@ const sanitizeResumeDataForAIRequest = (resumeData = {}) => {
             }))
             .filter((item) => hasAnyText(item.company, item.role, item.startDate, item.endDate, item.description))
             .slice(0, 20),
-        education: (Array.isArray(safeResumeData.education) ? safeResumeData.education : [])
-            .map((item = {}) => ({
-                institution: normalizeText(item.institution, 180),
-                degree: normalizeText(item.degree, 220),
-                startYear: normalizeText(item.startYear, 40),
-                endYear: normalizeText(item.endYear, 40),
-                description: normalizeText(item.description, 500),
-            }))
-            .filter((item) => hasAnyText(item.institution, item.degree, item.startYear, item.endYear, item.description))
-            .slice(0, 20),
-        skills: normalizeList(safeResumeData.skills, 25),
-        certifications: normalizeList(safeResumeData.certifications, 25),
-        achievements: normalizeList(safeResumeData.achievements, 25),
-        hobbies: normalizeList(safeResumeData.hobbies, 25),
+        education: [],
+        skills: [],
+        certifications: [],
+        achievements: [],
+        hobbies: [],
     };
 };
 
 const normalizeAiPayload = (payload = {}, fallbackScore = null) => {
-    const skills = Array.isArray(payload.skills) ? payload.skills.filter((item) => typeof item === 'string' && item.trim()) : [];
-    const certifications = Array.isArray(payload.certifications)
-        ? payload.certifications.filter((item) => typeof item === 'string' && item.trim())
-        : [];
-    const achievements = Array.isArray(payload.achievements)
-        ? payload.achievements.filter((item) => typeof item === 'string' && item.trim())
-        : [];
-    const hobbies = Array.isArray(payload.hobbies)
-        ? payload.hobbies.filter((item) => typeof item === 'string' && item.trim())
-        : [];
     const feedback = payload.atsFeedback || {};
+    const skills = Array.isArray(payload.skills)
+        ? payload.skills.filter((item) => typeof item === 'string' && item.trim())
+        : [];
 
     return {
         summary: typeof payload.summary === 'string' ? payload.summary.trim() : '',
@@ -110,9 +88,9 @@ const normalizeAiPayload = (payload = {}, fallbackScore = null) => {
         projects: Array.isArray(payload.projects) ? payload.projects : [],
         internships: Array.isArray(payload.internships) ? payload.internships : [],
         skills,
-        certifications,
-        achievements,
-        hobbies,
+        certifications: [],
+        achievements: [],
+        hobbies: [],
         atsFeedback: {
             currentScore: feedback.currentScore ?? fallbackScore ?? '',
             whyScoreIsLower: Array.isArray(feedback.whyScoreIsLower) ? feedback.whyScoreIsLower : [],
@@ -181,12 +159,17 @@ export const fetchAISuggestions = createAsyncThunk(
     async ({ jobDescription, atsContext = null } = {}, { getState, rejectWithValue }) => {
         try {
             const state = getState();
+            const uploadedText = typeof state.resume.uploadedText === 'string' ? state.resume.uploadedText : '';
+            const hasUploadedPdfContext = Boolean(
+                state.resume.uploadedFile?.name ||
+                String(state.resume.cloudinaryUrl || '').trim(),
+            );
             const normalizedResumeId =
                 typeof state.resume.resumeId === 'string' && state.resume.resumeId.trim()
                     ? state.resume.resumeId.trim()
                     : undefined;
             const resumeData = state.resume.resumeData;
-            const sanitizedResumeData = sanitizeResumeDataForAIRequest(resumeData);
+            const sanitizedResumeData = sanitizeAtsResumeDataForAIRequest(resumeData);
             const safeAtsContext = atsContext && typeof atsContext === 'object' ? atsContext : {};
             const atsScore = safeAtsContext.score ?? state.ats.score;
             const matchedKeywords = normalizeList(
@@ -208,12 +191,18 @@ export const fetchAISuggestions = createAsyncThunk(
                 60,
             );
 
-            if (!resumeData || typeof resumeData !== 'object') {
-                throw new Error('Resume data is required before requesting AI suggestions.');
+            if (!hasUploadedPdfContext) {
+                throw new Error('Upload a resume PDF in ATS Scanner before requesting AI improvements.');
+            }
+
+            if (!uploadedText.trim() && !normalizedResumeId) {
+                throw new Error('Uploaded resume text is unavailable. Re-upload the PDF and try again.');
             }
 
             const payload = {
+                mode: 'ats_only',
                 jobDescription,
+                resumeText: uploadedText,
                 resumeData: sanitizedResumeData,
                 atsScore,
                 matchedKeywords,

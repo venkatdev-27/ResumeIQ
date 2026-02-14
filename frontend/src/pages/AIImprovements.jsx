@@ -7,22 +7,21 @@ import Button from '@/components/common/Button';
 import AISuggestions from '@/components/ai/AISuggestions';
 import { fetchAISuggestions } from '@/redux/aiSlice';
 import { ROUTES } from '@/utils/constants';
-import { resumeFormToText } from '@/utils/helpers';
 
 function AIImprovements() {
     const dispatch = useDispatch();
     const navigate = useNavigate();
     const location = useLocation();
-    const { uploadedText, resumeId, form } = useSelector((state) => state.resume);
+    const { uploadedText, resumeId, uploadedFile, cloudinaryUrl } = useSelector((state) => state.resume);
     const ats = useSelector((state) => state.ats);
     const ai = useSelector((state) => state.ai);
     const [jobDescription, setJobDescription] = React.useState(() => String(location.state?.jobDescription || ''));
     const hasTriggeredInitialFetchRef = React.useRef(false);
 
-    const hasResumeContent = React.useMemo(() => {
-        const formText = resumeFormToText(form);
-        return Boolean(resumeId || String(uploadedText || '').trim() || String(formText || '').trim());
-    }, [resumeId, uploadedText, form]);
+    const hasResumeContent = React.useMemo(
+        () => Boolean((String(uploadedText || '').trim() || resumeId) && (uploadedFile?.name || String(cloudinaryUrl || '').trim())),
+        [uploadedText, resumeId, uploadedFile, cloudinaryUrl],
+    );
 
     const requestImprovements = React.useCallback(async () => {
         if (!hasResumeContent) {
@@ -60,7 +59,7 @@ function AIImprovements() {
                 <main className="mx-auto w-full max-w-4xl px-3 py-8 sm:px-6 lg:px-8">
                     <section className="border-b border-[#d5d9e1] pb-6">
                         <h2 className="font-ui-heading text-[1.6rem] font-bold text-[#111111] sm:text-[1.8rem]">No Resume Context Found</h2>
-                        <p className="mt-2 text-sm text-[#4b4b53]">Upload your resume first, then get AI improvements.</p>
+                        <p className="mt-2 text-sm text-[#4b4b53]">Upload a resume PDF in ATS Scanner first, then get ATS AI improvements.</p>
                         <Link to={ROUTES.atsScanner} className="mt-4 inline-flex">
                             <Button size="sm">Go To ATS Scanner</Button>
                         </Link>
@@ -82,7 +81,7 @@ function AIImprovements() {
                                 AI Resume Improvements
                             </h1>
                             <p className="mt-1 max-w-3xl text-sm text-[#4b4b53]">
-                                Improvement suggestions based on your uploaded resume and ATS context.
+                                ATS-focused wording improvements for summary, experience, projects, internships, and recommended skills based on your uploaded resume.
                             </p>
                         </div>
                         <Button variant="outline" size="sm" onClick={() => navigate(ROUTES.atsResults)}>

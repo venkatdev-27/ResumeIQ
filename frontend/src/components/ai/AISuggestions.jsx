@@ -34,9 +34,6 @@ function AISuggestions({
                 (improvedResume.projects || []).length ||
                 (improvedResume.internships || []).length ||
                 (improvedResume.skills || []).length ||
-                (improvedResume.certifications || []).length ||
-                (improvedResume.achievements || []).length ||
-                (improvedResume.hobbies || []).length ||
                 (improvedResume.atsFeedback?.missingKeywords || []).length ||
                 (improvedResume.atsFeedback?.missingSkills || []).length),
     );
@@ -67,6 +64,87 @@ function AISuggestions({
                             </div>
                         ) : null}
 
+                        {(improvedResume.workExperience || []).length ? (
+                            <div
+                                className={cn(
+                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
+                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
+                                )}
+                            >
+                                <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Improved Work Experience</h4>
+                                <div className="space-y-2">
+                                    {improvedResume.workExperience.map((item, index) => (
+                                        <div key={`ai-work-${index}`}>
+                                            <p className="break-words text-xs font-semibold text-[#111111] max-[350px]:text-[11px]">
+                                                {item.role || 'Role'}{item.company ? ` at ${item.company}` : ''}
+                                            </p>
+                                            {(Array.isArray(item.bullets) ? item.bullets : []).length ? (
+                                                <ul className="mt-1 list-inside list-disc space-y-1 text-xs text-[#4b4b53] max-[350px]:text-[11px]">
+                                                    {(item.bullets || []).map((bullet, bulletIndex) => (
+                                                        <li key={`ai-work-${index}-bullet-${bulletIndex}`} className="break-words">{bullet}</li>
+                                                    ))}
+                                                </ul>
+                                            ) : null}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : null}
+
+                        {(improvedResume.projects || []).length ? (
+                            <div
+                                className={cn(
+                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
+                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
+                                )}
+                            >
+                                <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Improved Projects</h4>
+                                <div className="space-y-2">
+                                    {improvedResume.projects.map((item, index) => (
+                                        <div key={`ai-project-${index}`}>
+                                            <p className="break-words text-xs font-semibold text-[#111111] max-[350px]:text-[11px]">
+                                                {item.title || `Project ${index + 1}`}
+                                            </p>
+                                            {(Array.isArray(item.bullets) ? item.bullets : []).length ? (
+                                                <ul className="mt-1 list-inside list-disc space-y-1 text-xs text-[#4b4b53] max-[350px]:text-[11px]">
+                                                    {(item.bullets || []).map((bullet, bulletIndex) => (
+                                                        <li key={`ai-project-${index}-bullet-${bulletIndex}`} className="break-words">{bullet}</li>
+                                                    ))}
+                                                </ul>
+                                            ) : null}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : null}
+
+                        {(improvedResume.internships || []).length ? (
+                            <div
+                                className={cn(
+                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
+                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
+                                )}
+                            >
+                                <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Improved Internships</h4>
+                                <div className="space-y-2">
+                                    {improvedResume.internships.map((item, index) => (
+                                        <div key={`ai-internship-${index}`}>
+                                            <p className="break-words text-xs font-semibold text-[#111111] max-[350px]:text-[11px]">
+                                                {item.role || 'Internship'}{item.company ? ` at ${item.company}` : ''}
+                                            </p>
+                                            {(Array.isArray(item.bullets) ? item.bullets : []).length ? (
+                                                <ul className="mt-1 list-inside list-disc space-y-1 text-xs text-[#4b4b53] max-[350px]:text-[11px]">
+                                                    {(item.bullets || []).map((bullet, bulletIndex) => (
+                                                        <li key={`ai-internship-${index}-bullet-${bulletIndex}`} className="break-words">{bullet}</li>
+                                                    ))}
+                                                </ul>
+                                            ) : null}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : null}
+
                         {(improvedResume.skills || []).length ? (
                             <div
                                 className={cn(
@@ -74,9 +152,9 @@ function AISuggestions({
                                     !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
                                 )}
                             >
-                                <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Optimized Skills (Missing In Resume)</h4>
+                                <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Recommended Skills (From Job Description)</h4>
                                 <div className="flex flex-wrap gap-2">
-                                    {improvedResume.skills.map((item, index) => (
+                                    {(improvedResume.skills || []).map((item, index) => (
                                         <span
                                             key={`ai-skill-${item}-${index}`}
                                             className="max-w-full break-all rounded-full bg-[#dfe6ff] px-2.5 py-1 text-xs text-[#2f52e8] max-[350px]:px-2 max-[350px]:py-0.5 max-[350px]:text-[11px]"
@@ -85,54 +163,6 @@ function AISuggestions({
                                         </span>
                                     ))}
                                 </div>
-                            </div>
-                        ) : null}
-
-                        {(improvedResume.certifications || []).length ? (
-                            <div
-                                className={cn(
-                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
-                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
-                                )}
-                            >
-                                <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Certifications</h4>
-                                <ul className="list-inside list-disc space-y-1 text-xs text-[#4b4b53] max-[350px]:text-[11px]">
-                                    {improvedResume.certifications.map((item, index) => (
-                                        <li key={`ai-cert-${index}`} className="break-words">{item}</li>
-                                    ))}
-                                </ul>
-                            </div>
-                        ) : null}
-
-                        {(improvedResume.achievements || []).length ? (
-                            <div
-                                className={cn(
-                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
-                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
-                                )}
-                            >
-                                <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Achievements</h4>
-                                <ul className="list-inside list-disc space-y-1 text-xs text-[#4b4b53] max-[350px]:text-[11px]">
-                                    {improvedResume.achievements.map((item, index) => (
-                                        <li key={`ai-achievement-${index}`} className="break-words">{item}</li>
-                                    ))}
-                                </ul>
-                            </div>
-                        ) : null}
-
-                        {(improvedResume.hobbies || []).length ? (
-                            <div
-                                className={cn(
-                                    'min-w-0 rounded-none border-0 bg-transparent p-0',
-                                    !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3 max-[350px]:p-2',
-                                )}
-                            >
-                                <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Hobbies</h4>
-                                <ul className="list-inside list-disc space-y-1 text-xs text-[#4b4b53] max-[350px]:text-[11px]">
-                                    {improvedResume.hobbies.map((item, index) => (
-                                        <li key={`ai-hobby-${index}`} className="break-words">{item}</li>
-                                    ))}
-                                </ul>
                             </div>
                         ) : null}
 

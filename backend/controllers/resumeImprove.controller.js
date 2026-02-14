@@ -7,7 +7,9 @@ const resumeImproveController = asyncHandler(async (req, res) => {
     }
 
     const {
+        mode = 'full',
         resumeData,
+        resumeText = '',
         jobDescription = '',
         atsScore = '',
         matchedKeywords = [],
@@ -20,7 +22,9 @@ const resumeImproveController = asyncHandler(async (req, res) => {
     }
 
     const result = await improveResumeWithAI({
+        mode,
         resumeData,
+        resumeText,
         jobDescription,
         atsScore,
         matchedKeywords,

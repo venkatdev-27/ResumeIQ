@@ -14,7 +14,6 @@ import {
 import { fetchATSScore } from '@/redux/atsSlice';
 import { clearAISuggestions } from '@/redux/aiSlice';
 import { ROUTES } from '@/utils/constants';
-import { resumeFormToText } from '@/utils/helpers';
 
 const dedupeStrings = (values = []) => {
     const seen = new Set();
@@ -48,7 +47,7 @@ function ATSResults() {
     const navigate = useNavigate();
     const location = useLocation();
 
-    const { uploadedText, resumeId, form } = useSelector((state) => state.resume);
+    const { uploadedText, resumeId, uploadedFile, cloudinaryUrl } = useSelector((state) => state.resume);
     const ats = useSelector((state) => state.ats);
 
     const [jobDescription, setJobDescription] = React.useState(() => String(location.state?.jobDescription || ''));
@@ -59,10 +58,10 @@ function ATSResults() {
     );
     const hasRequestedRef = React.useRef(false);
 
-    const hasResumeContent = React.useMemo(() => {
-        const formText = resumeFormToText(form);
-        return Boolean(resumeId || String(uploadedText || '').trim() || String(formText || '').trim());
-    }, [resumeId, uploadedText, form]);
+    const hasResumeContent = React.useMemo(
+        () => Boolean((String(uploadedText || '').trim() || resumeId) && (uploadedFile?.name || String(cloudinaryUrl || '').trim())),
+        [uploadedText, resumeId, uploadedFile, cloudinaryUrl],
+    );
 
     const runAtsOnMount = Boolean(location.state?.runAts);
     const safeScore = Math.max(0, Math.min(100, Number(ats.score || 0)));
@@ -173,7 +172,7 @@ function ATSResults() {
                     <section className="border-b border-[#d5d9e1] pb-6">
                         <h2 className="font-ui-heading text-[1.6rem] font-bold text-[#111111] sm:text-[1.8rem]">No Resume Context Found</h2>
                         <p className="mt-2 text-sm text-[#4b4b53]">
-                            Upload your resume first, then check ATS score.
+                            Upload a resume PDF in ATS Scanner first, then check ATS score.
                         </p>
                         <Link to={ROUTES.atsScanner} className="mt-4 inline-flex">
                             <Button size="sm">Go To ATS Scanner</Button>
@@ -349,7 +348,7 @@ function ATSResults() {
 
                             <div className="mt-4">
                                 <label htmlFor="ats-job-description" className="mb-1.5 block text-sm font-semibold text-[#111111]">
-                                    Job Description (Optional)
+                                    Job Description 
                                 </label>
                                 <textarea
                                     id="ats-job-description"
