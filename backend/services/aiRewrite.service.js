@@ -1,40 +1,25 @@
+const { GoogleGenAI } = require("@google/genai");
 const { AppError } = require('../utils/response');
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+let aiClient = null;
 
 const truncateText = (value = '', max = 1200) => String(value || '').trim().slice(0, max);
 
-const getGeminiResponse = async (prompt) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
+const getGeminiClient = () => {
+    if (!process.env.GEMINI_API_KEY) {
         throw new AppError('Gemini API key is not configured.', 500);
     }
 
-    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
-    const url = `${GEMINI_API_URL}/${model}:generateContent?key=${apiKey}`;
-
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            contents: [{
-                parts: [{ text: prompt }]
-            }],
-            generationConfig: {
-                temperature: 0.4,
-                responseMimeType: 'application/json',
-            }
-        }),
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Gemini API Error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
+    if (!aiClient) {
+        try {
+            aiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        } catch (error) {
+            console.error('Failed to initialize Gemini Client:', error);
+            throw new AppError('Failed to initialize AI service.', 500);
+        }
     }
 
-    return response.json();
+    return aiClient;
 };
 
 const ensureArrayOfStrings = (value) =>
@@ -630,13 +615,21 @@ const improveResumeWithGemini = async ({
         feedbackContext,
     });
 
+    const ai = getGeminiClient();
     let responseResult;
 
     try {
-        responseResult = await getGeminiResponse(prompt);
+        responseResult = await ai.models.generateContent({
+            model: process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite',
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+                temperature: 0.4,
+            },
+        });
     } catch (error) {
         console.error('Gemini API Error:', error);
-        const reason = String(error?.message || '').trim() || 'Unknown Gemini API error';
+        const reason = String(error?.message || '').trim() || 'Unknown Gemini SDK error';
         throw new AppError(`Gemini request failed: ${reason}`, 502);
     }
 
