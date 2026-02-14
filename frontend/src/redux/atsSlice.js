@@ -2,7 +2,7 @@ import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
 import { fetchATSScoreAPI } from '@/api/atsAPI';
 import { getErrorMessage, normalizeStringList, resumeFormToText, unwrapApiPayload } from '@/utils/helpers';
 
-export const fetchATSScore = createAsyncThunk('ats/fetchATSScore', async (_payload, { getState, rejectWithValue }) => {
+export const fetchATSScore = createAsyncThunk('ats/fetchATSScore', async (args = {}, { getState, rejectWithValue }) => {
     try {
         const state = getState();
         const resumeText = state.resume.uploadedText || resumeFormToText(state.resume.form);
@@ -10,17 +10,31 @@ export const fetchATSScore = createAsyncThunk('ats/fetchATSScore', async (_paylo
             typeof state.resume.resumeId === 'string' && state.resume.resumeId.trim()
                 ? state.resume.resumeId.trim()
                 : undefined;
+        const resumeDataSkills = Array.isArray(state.resume.resumeData?.skills)
+            ? state.resume.resumeData.skills
+            : [];
+        const formSkillsText = typeof state.resume.form?.skills === 'string'
+            ? state.resume.form.skills
+            : '';
+        const userSkills = resumeDataSkills.length
+            ? resumeDataSkills.join(', ')
+            : formSkillsText;
+        const jobDescription = typeof args?.jobDescription === 'string'
+            ? args.jobDescription
+            : '';
 
         if (!resumeText?.trim()) {
             throw new Error('Upload or create a resume before checking ATS score.');
         }
 
-        const payload = {
+        const requestPayload = {
             resumeText,
+            userSkills,
+            jobDescription,
             ...(normalizedResumeId ? { resumeId: normalizedResumeId } : {}),
         };
 
-        const response = await fetchATSScoreAPI(payload);
+        const response = await fetchATSScoreAPI(requestPayload);
         const data = unwrapApiPayload(response);
 
         const score = Number(data.score ?? data.atsScore ?? data.matchScore ?? 0);
