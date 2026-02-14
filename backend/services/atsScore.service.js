@@ -1,6 +1,6 @@
-const { GoogleGenAI } = require("@google/genai");
 const { ATS_PRIORITY_KEYWORDS } = require('../constants/atsKeywords');
 const { extractKeywordsFromText } = require('./keywordExtract.service');
+const { requestChatCompletion } = require('./aiClient.service');
 const {
     calculateCoverageScore,
     calculateKeywordDensityScore,
@@ -9,31 +9,13 @@ const {
 } = require('../utils/scoreCalculator');
 const { normalizeText } = require('../utils/normalizeText');
 
-let aiClient = null;
-
 const TECHNICAL_SKILL_SET = new Set(
     ATS_PRIORITY_KEYWORDS.filter((keyword) => !['communication', 'leadership', 'project management', 'problem solving'].includes(keyword)),
 );
 
 const normalizeForMatch = (value = '') => normalizeText(String(value || '')).toLowerCase().trim();
 const normalizeSkillTerm = (value = '') => normalizeForMatch(value);
-
-const getAiClient = () => {
-    if (!process.env.GEMINI_API_KEY) {
-        return null;
-    }
-
-    if (!aiClient) {
-        try {
-            aiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        } catch (error) {
-            console.error('Failed to initialize Gemini Client:', error);
-            return null;
-        }
-    }
-
-    return aiClient;
-};
+const toSafeAiJson = (data, maxChars = 12_000) => JSON.stringify(data ?? '').slice(0, maxChars);
 
 const dedupeKeywords = (keywords = [], max = 45) => {
     const set = new Set();
@@ -86,29 +68,28 @@ const buildResumeDrivenTargets = ({ resumeKeywords = [], resumeData = null }) =>
     };
 };
 
-const extractTextFromGeminiResponse = (response) => {
-    if (typeof response?.text === 'string' && response.text.trim()) {
-        return response.text.trim();
-    }
-
-    const textFromParts = response?.candidates?.[0]?.content?.parts
-        ?.map((part) => part?.text || '')
-        .join('')
-        .trim();
-
-    return textFromParts || '';
-};
-
 const parseAiResumeTargets = (value = '') => {
     const cleaned = String(value)
         .replace(/```json/gi, '')
         .replace(/```/g, '')
         .trim();
 
-    let parsed;
+    let parsed = null;
     try {
         parsed = JSON.parse(cleaned);
     } catch (_error) {
+        const firstBrace = cleaned.indexOf('{');
+        const lastBrace = cleaned.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
+            try {
+                parsed = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+            } catch (_nestedError) {
+                parsed = null;
+            }
+        }
+    }
+
+    if (!parsed) {
         return null;
     }
 
@@ -124,9 +105,15 @@ const parseAiResumeTargets = (value = '') => {
         source: 'ai',
         inferredProfile,
         targetKeywords,
-        targetSkills: targetSkills.length ? targetSkills : normalizeSkillList(targetKeywords.filter((keyword) => TECHNICAL_SKILL_SET.has(keyword)), 20),
+        targetSkills: targetSkills.length
+            ? targetSkills
+            : normalizeSkillList(
+                  targetKeywords.filter((keyword) => TECHNICAL_SKILL_SET.has(keyword)),
+                  20,
+              ),
     };
 };
+
 
 const buildResumeOnlyPrompt = ({ resumeText, resumeKeywords }) => `You are an ATS optimization expert.
 Analyze the resume and output keywords/skills that should naturally appear in summary, work experience, projects, and internships.
@@ -146,28 +133,26 @@ Resume text:
 ${resumeText}
 
 Top extracted resume keywords:
-${JSON.stringify(resumeKeywords.slice(0, 30))}`;
+${toSafeAiJson(resumeKeywords.slice(0, 30), 2_000)}`;
 
 const getResumeOnlyTargets = async ({ normalizedResume, resumeKeywords, resumeData }) => {
-    const ai = getAiClient();
-    if (!ai) {
-        return buildResumeDrivenTargets({ resumeKeywords, resumeData });
-    }
-
     try {
-        const response = await ai.models.generateContent({
-            model: process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite',
-            contents: buildResumeOnlyPrompt({
-                resumeText: normalizedResume.slice(0, 10000),
-                resumeKeywords,
-            }),
-            config: {
-                responseMimeType: 'application/json',
-                temperature: 0.4,
-            },
+        const responseText = await requestChatCompletion({
+            messages: [
+                {
+                    role: 'user',
+                    content: buildResumeOnlyPrompt({
+                        resumeText: normalizedResume.slice(0, 10000),
+                        resumeKeywords,
+                    }),
+                },
+            ],
+            jsonMode: true,
+            expectJson: true,
+            maxTokens: 1200,
         });
 
-        const parsed = parseAiResumeTargets(extractTextFromGeminiResponse(response));
+        const parsed = parseAiResumeTargets(responseText);
         if (parsed) {
             return parsed;
         }
