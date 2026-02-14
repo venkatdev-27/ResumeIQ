@@ -1,4 +1,3 @@
-const { google } = require('@google/genai');
 const { ATS_PRIORITY_KEYWORDS } = require('../constants/atsKeywords');
 const { extractKeywordsFromText } = require('./keywordExtract.service');
 const {
@@ -9,7 +8,7 @@ const {
 } = require('../utils/scoreCalculator');
 const { normalizeText } = require('../utils/normalizeText');
 
-let aiClient = null;
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 const TECHNICAL_SKILL_SET = new Set(
     ATS_PRIORITY_KEYWORDS.filter((keyword) => !['communication', 'leadership', 'project management', 'problem solving'].includes(keyword)),
@@ -18,21 +17,32 @@ const TECHNICAL_SKILL_SET = new Set(
 const normalizeForMatch = (value = '') => normalizeText(String(value || '')).toLowerCase().trim();
 const normalizeSkillTerm = (value = '') => normalizeForMatch(value);
 
-const getAiClient = () => {
-    if (!process.env.GEMINI_API_KEY) {
+const getGeminiResponse = async (prompt) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return null;
+
+    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
+    const url = `${GEMINI_API_URL}/${model}:generateContent?key=${apiKey}`;
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: 0.4,
+                    responseMimeType: 'application/json',
+                }
+            }),
+        });
+        
+        if (!response.ok) return null;
+        return response.json();
+    } catch (error) {
+        console.error('Gemini API Error:', error);
         return null;
     }
-
-    if (!aiClient) {
-        try {
-            aiClient = new google.GenAI({ apiKey: process.env.GEMINI_API_KEY });
-        } catch (error) {
-            console.error('Failed to initialize Gemini Client:', error);
-            return null;
-        }
-    }
-
-    return aiClient;
 };
 
 const dedupeKeywords = (keywords = [], max = 45) => {
@@ -149,23 +159,13 @@ Top extracted resume keywords:
 ${JSON.stringify(resumeKeywords.slice(0, 30))}`;
 
 const getResumeOnlyTargets = async ({ normalizedResume, resumeKeywords, resumeData }) => {
-    const ai = getAiClient();
-    if (!ai) {
-        return buildResumeDrivenTargets({ resumeKeywords, resumeData });
-    }
-
     try {
-        const response = await ai.models.generateContent({
-            model: process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite',
-            contents: buildResumeOnlyPrompt({
-                resumeText: normalizedResume.slice(0, 10000),
-                resumeKeywords,
-            }),
-            config: {
-                responseMimeType: 'application/json',
-                temperature: 0.4,
-            },
-        });
+        const response = await getGeminiResponse(buildResumeOnlyPrompt({
+            resumeText: normalizedResume.slice(0, 10000),
+            resumeKeywords,
+        }));
+
+        if (!response) return buildResumeDrivenTargets({ resumeKeywords, resumeData });
 
         const parsed = parseAiResumeTargets(extractTextFromGeminiResponse(response));
         if (parsed) {
