@@ -8,6 +8,7 @@ import ResumeBuilder from './pages/ResumeBuilder';
 import ResumePreviewPage from './pages/ResumePreviewPage';
 import ATSScanner from './pages/ATSScanner';
 import ATSResults from './pages/ATSResults';
+import AIImprovements from './pages/AIImprovements';
 import Templates from './pages/Templates';
 import ProtectedRoute from './routes/ProtectedRoute';
 import { ROUTES } from './utils/constants';
@@ -40,6 +41,7 @@ function App() {
                 <Route path={ROUTES.resumePreview} element={<ResumePreviewPage />} />
                 <Route path={ROUTES.atsScanner} element={<ATSScanner />} />
                 <Route path={ROUTES.atsResults} element={<ATSResults />} />
+                <Route path={ROUTES.atsImprovements} element={<AIImprovements />} />
             </Route>
 
             <Route path="/dashboard" element={<Navigate to={ROUTES.home} replace />} />
