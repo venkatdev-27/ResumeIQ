@@ -12,20 +12,20 @@ import Navbar from '../components/layout/Navbar';
 
 const resumeIntroItems = [
     {
-        title: 'Recruiter-Approved Resume',
-        description: 'We work with recruiters to design resume templates that format automatically.',
+        title: 'ATS-Optimized Resume Templates',
+        description: 'Choose recruiter-friendly templates built for clean parsing, professional layout consistency, and faster shortlisting.',
         icon: BadgeCheck,
         accent: 'bg-[#99ecb4]',
     },
     {
-        title: 'Finish Your Resume in 15 Minutes',
-        description: 'Get quick prompts that help you write better work experience and impact statements fast.',
+        title: 'Build Your Resume Faster',
+        description: 'Use guided sections, live preview, and structured prompts to complete job-ready resumes in minutes.',
         icon: Clock3,
         accent: 'bg-[#d8def0]',
     },
     {
-        title: 'Land an Interview',
-        description: 'We suggest the skills and keywords you should add to improve ATS match and visibility.',
+        title: 'AI ATS Score and Fixes',
+        description: 'Scan your resume against job descriptions and get missing skills, keywords, and targeted improvements.',
         icon: BriefcaseBusiness,
         accent: 'bg-[#f5d9a1]',
     },
