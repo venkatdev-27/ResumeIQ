@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const User = require('../models/User.model');
 const { AppError, asyncHandler } = require('../utils/response');
 
@@ -24,6 +25,10 @@ const protect = asyncHandler(async (req, _res, next) => {
         decoded = jwt.verify(token, jwtSecret);
     } catch (_error) {
         throw new AppError('Invalid or expired token.', 401);
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(decoded?.userId)) {
+        throw new AppError('Invalid token user.', 401);
     }
 
     const user = await User.findById(decoded.userId);
