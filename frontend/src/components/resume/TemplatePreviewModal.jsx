@@ -2,6 +2,31 @@ import React, { useEffect, useRef, useState } from 'react';
 import Loader from '@/components/common/Loader';
 import { A4_HEIGHT, A4_WIDTH, hasMeaningfulResumeData, PREVIEW_RESUME_DATA, TEMPLATE_COMPONENT_MAP } from './templatePreviewConfig';
 
+const computeA4FitMetrics = (resumeElement) => {
+    if (!resumeElement) {
+        return { scale: 1, offsetX: 0 };
+    }
+
+    const contentWidth = Math.max(
+        A4_WIDTH,
+        Math.ceil(resumeElement.scrollWidth || 0),
+        Math.ceil(resumeElement.offsetWidth || 0),
+    );
+    const contentHeight = Math.max(
+        A4_HEIGHT,
+        Math.ceil(resumeElement.scrollHeight || 0),
+        Math.ceil(resumeElement.offsetHeight || 0),
+    );
+
+    const fitScale = Math.min(1, A4_WIDTH / contentWidth, A4_HEIGHT / contentHeight);
+    const offsetX = Math.max(0, Math.floor((A4_WIDTH - contentWidth * fitScale) / 2));
+
+    return {
+        scale: Number.isFinite(fitScale) && fitScale > 0 ? fitScale : 1,
+        offsetX,
+    };
+};
+
 function TemplatePreviewModal({
     open,
     template,
@@ -14,7 +39,10 @@ function TemplatePreviewModal({
     resumeData = null,
 }) {
     const previewContainerRef = useRef(null);
+    const previewPageRef = useRef(null);
     const [scale, setScale] = useState(1);
+    const [contentFitScale, setContentFitScale] = useState(1);
+    const [contentOffsetX, setContentOffsetX] = useState(0);
     const [isActionLoading, setIsActionLoading] = useState(false);
 
     useEffect(() => {
@@ -48,8 +76,47 @@ function TemplatePreviewModal({
     useEffect(() => {
         if (!open) {
             setIsActionLoading(false);
+            setContentFitScale(1);
+            setContentOffsetX(0);
         }
     }, [open, template?.id]);
+
+    useEffect(() => {
+        if (!open) {
+            return undefined;
+        }
+
+        const pageRoot = previewPageRef.current;
+        const resumeElement = pageRoot?.querySelector('#resume-pdf');
+        if (!resumeElement) {
+            setContentFitScale(1);
+            setContentOffsetX(0);
+            return undefined;
+        }
+
+        let frameId = null;
+
+        const updateMetrics = () => {
+            const metrics = computeA4FitMetrics(resumeElement);
+            setContentFitScale((prev) => (Math.abs(prev - metrics.scale) < 0.005 ? prev : metrics.scale));
+            setContentOffsetX((prev) => (Math.abs(prev - metrics.offsetX) < 1 ? prev : metrics.offsetX));
+        };
+
+        const scheduleUpdate = () => {
+            cancelAnimationFrame(frameId);
+            frameId = requestAnimationFrame(updateMetrics);
+        };
+
+        scheduleUpdate();
+
+        const observer = new ResizeObserver(scheduleUpdate);
+        observer.observe(resumeElement);
+
+        return () => {
+            cancelAnimationFrame(frameId);
+            observer.disconnect();
+        };
+    }, [open, template?.id, resumeData]);
 
     useEffect(() => {
         if (!open) {
@@ -104,7 +171,7 @@ function TemplatePreviewModal({
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-5">
             <button type="button" aria-label="Close preview overlay" className="absolute inset-0" onClick={onClose} />
 
-            <div className="relative z-[71] flex h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+            <div className="relative z-[71] flex h-[100dvh] max-h-[100dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:h-[96vh] sm:max-h-[96vh]">
                 <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 max-[350px]:px-3 max-[350px]:py-2.5">
                     <div>
                         <h3 className="text-base font-semibold text-foreground max-[350px]:text-sm">{template.name} Preview</h3>
@@ -119,7 +186,7 @@ function TemplatePreviewModal({
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto overflow-x-hidden bg-muted/30 p-2 max-[360px]:p-1.5 sm:p-6">
+                <div className="flex-1 overflow-y-auto overflow-x-hidden bg-muted/30 p-2 pb-3 max-[360px]:p-1.5 sm:p-6">
                     <div ref={previewContainerRef} className="mx-auto w-full max-w-[900px] overflow-hidden">
                         <article
                             className="mx-auto overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
@@ -128,17 +195,28 @@ function TemplatePreviewModal({
                             <div
                                 style={{
                                     width: A4_WIDTH,
+                                    height: A4_HEIGHT,
                                     transform: `scale(${scale})`,
                                     transformOrigin: 'top left',
                                 }}
                             >
-                                <SelectedTemplate resumeData={previewData} />
+                                <div ref={previewPageRef} className="w-[794px]">
+                                    <div
+                                        style={{
+                                            width: A4_WIDTH,
+                                            transform: `translateX(${contentOffsetX}px) scale(${contentFitScale})`,
+                                            transformOrigin: 'top left',
+                                        }}
+                                    >
+                                        <SelectedTemplate resumeData={previewData} />
+                                    </div>
+                                </div>
                             </div>
                         </article>
                     </div>
                 </div>
 
-                <div className="border-t border-border px-4 py-3">
+                <div className="border-t border-border px-4 py-3 pb-[calc(env(safe-area-inset-bottom,0px)+12px)]">
                     <button
                         type="button"
                         onClick={handlePrimaryAction}
