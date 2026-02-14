@@ -73,8 +73,8 @@ function ATSResults() {
 
     const showLoadingState = ats.status === 'loading' || (runAtsOnMount && !hasRequestedRef.current && ats.status === 'idle');
 
-    const atsRecommendations = dedupeStrings(ats.recommendations || []);
     const missingSkills = dedupeStrings(ats.missingSkills || []);
+    const missingKeywords = dedupeStrings(ats.missingKeywords || []);
 
     React.useEffect(() => {
         if (!hasResumeContent || hasRequestedRef.current) {
@@ -179,7 +179,17 @@ function ATSResults() {
     };
 
     const handleFetchAI = async () => {
-        await dispatch(fetchAISuggestions({ jobDescription }));
+        const atsAction = await dispatch(fetchATSScore({ jobDescription }));
+        if (!fetchATSScore.fulfilled.match(atsAction)) {
+            return;
+        }
+
+        await dispatch(
+            fetchAISuggestions({
+                jobDescription,
+                atsContext: atsAction.payload,
+            }),
+        );
     };
 
     if (!hasResumeContent) {
@@ -219,7 +229,7 @@ function ATSResults() {
                                 ATS Analysis Result
                             </h1>
                             <p className="mt-1 max-w-3xl text-sm text-[#4b4b53]">
-                                Score, missing skills, and AI-powered improvements from your uploaded resume.
+                                Score, missing skills, missing vocabulary words, and AI-powered improvements from your uploaded resume.
                             </p>
                         </div>
                         <Button variant="outline" size="sm" onClick={() => navigate(ROUTES.atsScanner)}>
@@ -305,7 +315,9 @@ function ATSResults() {
                             </article>
 
                             <article className="min-w-0">
-                                <h3 className="font-ui-heading text-[1.25rem] font-bold text-[#111111]">Missing Skills</h3>
+                                <h3 className="font-ui-heading text-[1.25rem] font-bold text-[#111111]">Missing Resume Gaps</h3>
+
+                                <h4 className="mt-3 text-sm font-semibold text-[#111111]">Skills</h4>
                                 <p className="mt-1 text-sm text-[#4b4b53]">
                                     Skills missing or weak in your resume for ATS matching.
                                 </p>
@@ -321,7 +333,26 @@ function ATSResults() {
                                         ))}
                                     </div>
                                 ) : (
-                                    <p className="mt-4 text-sm text-[#4b4b53]">No major missing skills found.</p>
+                                    <p className="mt-3 text-sm text-[#4b4b53]">No major missing skills found.</p>
+                                )}
+
+                                <h4 className="mt-4 text-sm font-semibold text-[#111111]">Vocabulary Words</h4>
+                                <p className="mt-1 text-sm text-[#4b4b53]">
+                                    Non-skill ATS keywords from the job description that are missing in your resume content.
+                                </p>
+                                {missingKeywords.length ? (
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        {missingKeywords.map((item, index) => (
+                                            <span
+                                                key={`ats-missing-keyword-${item}-${index}`}
+                                                className="max-w-full rounded-full bg-[#fbe7ff] px-3 py-1 text-xs font-medium text-[#8a2c8f] break-all"
+                                            >
+                                                {item}
+                                            </span>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="mt-3 text-sm text-[#4b4b53]">No major missing vocabulary keywords found.</p>
                                 )}
                             </article>
                         </section>
