@@ -14,73 +14,64 @@ const apiLimiter = require('./middlewares/rateLimit.middleware');
 
 const app = express();
 
-// ✅ Required for Render (real client IP for rate limiter)
-app.set("trust proxy", 1);
+const JSON_BODY_LIMIT_MB = Number(process.env.MAX_JSON_BODY_MB || 10);
+const jsonLimit = `${Number.isFinite(JSON_BODY_LIMIT_MB) && JSON_BODY_LIMIT_MB > 0 ? JSON_BODY_LIMIT_MB : 10}mb`;
 
-// ================= SECURITY =================
+app.set('trust proxy', 1);
+
 app.use(helmet());
-
-// ================= COMPRESSION =================
 app.use(compression({ threshold: 1024 }));
+app.use(express.json({ limit: jsonLimit }));
+app.use(express.urlencoded({ extended: true, limit: jsonLimit }));
 
-// ================= BODY PARSER =================
-app.use(express.json({ limit: '10mb' }));
-
-// ================= CORS =================
 const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost",
-  "https://resumeiq-2k2r.onrender.com",
-  process.env.CLIENT_ORIGIN
-].filter(Boolean); // 🔥 removes undefined
+    'http://localhost:5173',
+    'http://localhost',
+    'https://resumeiq-2k2r.onrender.com',
+    process.env.CLIENT_ORIGIN,
+].filter(Boolean);
 
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    return callback(null, false); // ❗ don't crash server
-  },
-  credentials: true,
-}));
+app.use(
+    cors({
+        origin: (origin, callback) => {
+            if (!origin || allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+            return callback(null, false);
+        },
+        credentials: true,
+    }),
+);
 
-// ================= LOGGING =================
 if (process.env.NODE_ENV !== 'production') {
-  app.use(morgan('dev'));
+    app.use(morgan('dev'));
 }
 
-// ================= ROOT ROUTE =================
-app.get("/", (req, res) => {
-  res.json({
-    success: true,
-    message: "API is running 🚀"
-  });
+app.get('/', (_req, res) => {
+    res.status(200).json({
+        success: true,
+        message: 'API is running',
+    });
 });
 
-// ✅ HEALTH CHECK (for Render)
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "OK" });
+app.get('/health', (_req, res) => {
+    res.status(200).json({ status: 'OK' });
 });
 
-// ✅ API TEST ENDPOINT
-app.get("/api/test", (req, res) => {
-  res.status(200).json({ 
-    message: "API is working correctly",
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  });
+app.get('/api/test', (_req, res) => {
+    res.status(200).json({
+        message: 'API is working correctly',
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development',
+    });
 });
 
-// ================= RATE LIMIT =================
 app.use('/api', apiLimiter);
-
-// ================= ROUTES =================
 app.use('/api/auth', authRoutes);
 app.use('/api/resume', resumeRoutes);
 app.use('/api/ats', atsRoutes);
 app.use('/api/ai', aiRoutes);
 
-// ================= ERROR HANDLING =================
 app.use(notFoundHandler);
 app.use(errorHandler);
 
