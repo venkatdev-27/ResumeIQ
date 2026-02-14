@@ -97,15 +97,15 @@ function ATSResults() {
             return undefined;
         }
 
-        setLoadingProgress(0);
+        setLoadingProgress(1);
         const timer = window.setInterval(() => {
             setLoadingProgress((prev) => {
-                if (prev >= 92) {
-                    return 92;
+                if (prev >= 100) {
+                    return 100;
                 }
-                return prev + 8;
+                return Math.min(prev + 5, 100);
             });
-        }, 260);
+        }, 220);
 
         return () => window.clearInterval(timer);
     }, [ats.status]);
@@ -116,15 +116,15 @@ function ATSResults() {
             return undefined;
         }
 
-        setAiLoadingProgress(0);
+        setAiLoadingProgress(1);
         const timer = window.setInterval(() => {
             setAiLoadingProgress((prev) => {
-                if (prev >= 92) {
-                    return 92;
+                if (prev >= 100) {
+                    return 100;
                 }
-                return prev + 7;
+                return Math.min(prev + 5, 100);
             });
-        }, 240);
+        }, 200);
 
         return () => window.clearInterval(timer);
     }, [ai.status]);
