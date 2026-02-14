@@ -34,6 +34,9 @@ function AISuggestions({
                 (improvedResume.projects || []).length ||
                 (improvedResume.internships || []).length ||
                 (improvedResume.skills || []).length ||
+                (improvedResume.certifications || []).length ||
+                (improvedResume.achievements || []).length ||
+                (improvedResume.hobbies || []).length ||
                 (improvedResume.atsFeedback?.missingKeywords || []).length ||
                 (improvedResume.atsFeedback?.missingSkills || []).length),
     );
@@ -72,6 +75,39 @@ function AISuggestions({
                                         </span>
                                     ))}
                                 </div>
+                            </div>
+                        ) : null}
+
+                        {(improvedResume.certifications || []).length ? (
+                            <div className={cn('rounded-none border-0 bg-transparent p-0', !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3')}>
+                                <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Certifications</h4>
+                                <ul className="list-inside list-disc space-y-1 text-xs text-[#4b4b53] max-[350px]:text-[11px]">
+                                    {improvedResume.certifications.map((item, index) => (
+                                        <li key={`ai-cert-${index}`}>{item}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ) : null}
+
+                        {(improvedResume.achievements || []).length ? (
+                            <div className={cn('rounded-none border-0 bg-transparent p-0', !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3')}>
+                                <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Achievements</h4>
+                                <ul className="list-inside list-disc space-y-1 text-xs text-[#4b4b53] max-[350px]:text-[11px]">
+                                    {improvedResume.achievements.map((item, index) => (
+                                        <li key={`ai-achievement-${index}`}>{item}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ) : null}
+
+                        {(improvedResume.hobbies || []).length ? (
+                            <div className={cn('rounded-none border-0 bg-transparent p-0', !embedded && 'rounded-xl border border-[#d5d9e1] bg-[#eceef2] p-3')}>
+                                <h4 className="mb-2 text-sm font-semibold text-[#111111] max-[350px]:text-xs">Hobbies</h4>
+                                <ul className="list-inside list-disc space-y-1 text-xs text-[#4b4b53] max-[350px]:text-[11px]">
+                                    {improvedResume.hobbies.map((item, index) => (
+                                        <li key={`ai-hobby-${index}`}>{item}</li>
+                                    ))}
+                                </ul>
                             </div>
                         ) : null}
 
