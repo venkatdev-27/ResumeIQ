@@ -1,4 +1,4 @@
-const { GoogleGenAI } = require('@google/genai');
+const { Client } = require('@google/genai');
 const { AppError } = require('../utils/response');
 
 let aiClient = null;
@@ -11,7 +11,12 @@ const getGeminiClient = () => {
     }
 
     if (!aiClient) {
-        aiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        try {
+            aiClient = new Client({ apiKey: process.env.GEMINI_API_KEY });
+        } catch (error) {
+            console.error('Failed to initialize Gemini Client:', error);
+            throw new AppError('Failed to initialize AI service.', 500);
+        }
     }
 
     return aiClient;
@@ -623,6 +628,7 @@ const improveResumeWithGemini = async ({
             },
         });
     } catch (error) {
+        console.error('Gemini API Error:', error);
         const reason = String(error?.message || '').trim() || 'Unknown Gemini SDK error';
         throw new AppError(`Gemini request failed: ${reason}`, 502);
     }
