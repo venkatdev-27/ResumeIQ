@@ -1,4 +1,5 @@
 const { calculateAtsScore } = require('../services/atsScore.service');
+const mongoose = require('mongoose');
 const Resume = require('../models/Resume.model');
 const { AppError, asyncHandler, sendSuccess } = require('../utils/response');
 
@@ -8,6 +9,10 @@ const resolveResumeContext = async ({ userId, resumeText, resumeId }) => {
     let resumeDoc = null;
 
     if (resumeId) {
+        if (!mongoose.Types.ObjectId.isValid(resumeId)) {
+            throw new AppError('Invalid resume ID.', 400);
+        }
+
         resumeDoc = await Resume.findOne({
             _id: resumeId,
             user: userId,
@@ -34,9 +39,14 @@ const resolveResumeContext = async ({ userId, resumeText, resumeId }) => {
 };
 
 const getScore = asyncHandler(async (req, res) => {
+    const userId = req.user?._id;
+    if (!userId) {
+        throw new AppError('Unauthorized user context.', 401);
+    }
+
     const { resumeText, resumeId } = req.body;
     const context = await resolveResumeContext({
-        userId: req.user._id,
+        userId,
         resumeText,
         resumeId,
     });
