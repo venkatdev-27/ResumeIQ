@@ -4,7 +4,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Install chromium
+# Install chromium for puppeteer
 RUN apk add --no-cache chromium
 
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
@@ -14,6 +14,6 @@ RUN npm ci --omit=dev
 
 COPY . .
 
-EXPOSE 5000
+EXPOSE 10000
 
 CMD ["node", "server.js"]
