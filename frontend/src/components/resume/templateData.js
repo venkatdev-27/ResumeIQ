@@ -73,6 +73,9 @@ const truncateSummary = (text, maxLines = 4, maxCharsPerLine = 170) => {
     return fixedLines.slice(0, maxLines).join('\n');
 };
 
+const summaryToParagraph = (value = '') =>
+    cleanOneLine(String(value || '').replace(/\n+/g, ' '));
+
 const hasAnyValue = (item, keys = []) => keys.some((key) => Boolean(clean(item?.[key])));
 
 const normalizeStringList = (value) =>
@@ -98,8 +101,18 @@ const dedupeLines = (value = []) => {
         });
 };
 
-const ensureThreeBulletLines = (lines = [], fallback = []) => {
-    const base = dedupeLines(lines);
+const clampBulletLineCount = (value = 3) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        return 3;
+    }
+
+    return Math.max(2, Math.min(3, Math.round(parsed)));
+};
+
+const ensureBulletLines = (lines = [], fallback = [], maxLines = 3) => {
+    const targetLines = clampBulletLineCount(maxLines);
+    const base = dedupeLines(lines).slice(0, targetLines);
     const fallbackLines = dedupeLines(fallback);
     const merged = dedupeLines([...base, ...fallbackLines]);
 
@@ -110,12 +123,12 @@ const ensureThreeBulletLines = (lines = [], fallback = []) => {
     const fixed = [...merged];
     const seed = [...merged];
     let cursor = 0;
-    while (fixed.length < 3 && seed.length) {
+    while (fixed.length < targetLines && seed.length) {
         fixed.push(seed[cursor % seed.length]);
         cursor += 1;
     }
 
-    return fixed.slice(0, 3);
+    return fixed.slice(0, targetLines);
 };
 
 export const joinNonEmpty = (values = [], separator = ' | ') =>
@@ -133,7 +146,7 @@ const normalizePersonalDetails = (value = {}) => ({
     email: clean(value.email),
     phone: clean(value.phone),
     location: clean(value.location),
-    summary: truncateSummary(normalizeMultiline(value.summary), 4, 400),
+    summary: summaryToParagraph(truncateSummary(normalizeMultiline(value.summary), 4, 400)),
     linkedin: clean(value.linkedin),
     website: clean(value.website),
     photo: clean(value.photo),
@@ -147,6 +160,7 @@ const normalizeWorkExperience = (value = []) =>
             startDate: clean(item.startDate),
             endDate: clean(item.endDate),
             description: normalizeMultiline(item.description),
+            bulletMaxLines: 3,
         }))
         .filter((item) => hasAnyValue(item, ['company', 'role', 'startDate', 'endDate', 'description']))
         .slice(0, 3);
@@ -158,6 +172,7 @@ const normalizeProjects = (value = []) =>
             techStack: clean(item.techStack),
             link: clean(item.link),
             description: normalizeMultiline(item.description),
+            bulletMaxLines: 3,
         }))
         .filter((item) => hasAnyValue(item, ['name', 'techStack', 'link', 'description']));
 
@@ -169,6 +184,7 @@ const normalizeInternships = (value = []) =>
             startDate: clean(item.startDate),
             endDate: clean(item.endDate),
             description: normalizeMultiline(item.description),
+            bulletMaxLines: 3,
         }))
         .filter((item) => hasAnyValue(item, ['company', 'role', 'startDate', 'endDate', 'description']));
 
@@ -181,6 +197,7 @@ const resolveVisibleExperience = (workExperience = [], internships = []) => {
         return internships.map((item) => ({
             ...item,
             role: clean(item.role),
+            bulletMaxLines: 3,
         }));
     }
 
@@ -198,15 +215,68 @@ const normalizeEducation = (value = []) =>
         }))
         .filter((item) => hasAnyValue(item, ['institution', 'degree', 'startYear', 'endYear']));
 
+const isDenseSectionList = (value = []) => (Array.isArray(value) ? value.length : 0) >= 3;
+
+const buildCompressionSeed = (resumeData = {}) => {
+    const personal = resumeData?.personalDetails || {};
+    const rawSeed = cleanOneLine([
+        personal.fullName,
+        personal.title,
+        ...(Array.isArray(resumeData?.skills) ? resumeData.skills : []),
+    ].join('|'));
+
+    return [...rawSeed].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+};
+
+const selectBulletCompressionTarget = ({ resumeData = {}, visibleExperience = [], projects = [] }) => {
+    const hasDenseExperience = isDenseSectionList(visibleExperience);
+    const hasDenseProjects = isDenseSectionList(projects);
+    const hasDenseExtras =
+        isDenseSectionList(resumeData?.achievements) ||
+        isDenseSectionList(resumeData?.certifications) ||
+        isDenseSectionList(resumeData?.hobbies);
+
+    if (!(hasDenseExperience || hasDenseProjects) || !hasDenseExtras) {
+        return null;
+    }
+
+    const seed = buildCompressionSeed(resumeData);
+    const section =
+        hasDenseExperience && hasDenseProjects
+            ? seed % 2 === 0 ? 'projects' : 'experience'
+            : hasDenseProjects ? 'projects' : 'experience';
+    const targetList = section === 'projects' ? projects : visibleExperience;
+    if (!targetList.length) {
+        return null;
+    }
+
+    return {
+        section,
+        index: seed % targetList.length,
+    };
+};
+
+const applyBulletCompression = (items = [], sectionKey = '', target = null) =>
+    (Array.isArray(items) ? items : []).map((item, index) => ({
+        ...item,
+        bulletMaxLines: target && target.section === sectionKey && target.index === index ? 2 : 3,
+    }));
+
 export const getTemplateData = (resumeData = {}) => {
     const workExperience = normalizeWorkExperience(resumeData.workExperience || []);
     const internships = normalizeInternships(resumeData.internships || []);
     const visibleExperience = resolveVisibleExperience(workExperience, internships);
+    const projects = normalizeProjects(resumeData.projects || []);
+    const compressionTarget = selectBulletCompressionTarget({
+        resumeData,
+        visibleExperience,
+        projects,
+    });
 
     return {
         personalDetails: normalizePersonalDetails(resumeData.personalDetails || {}),
-        workExperience: visibleExperience,
-        projects: normalizeProjects(resumeData.projects || []),
+        workExperience: applyBulletCompression(visibleExperience, 'experience', compressionTarget),
+        projects: applyBulletCompression(projects, 'projects', compressionTarget),
         internships: [],
         education: normalizeEducation(resumeData.education || []),
         skills: normalizeStringList(resumeData.skills),
@@ -640,7 +710,13 @@ const resolveCategoryFromSkill = (skill = '', context = {}) => {
     return 'other';
 };
 
-export const toSkillDisplayLines = (skills = [], maxLines = 10) => {
+const sanitizeSkillPreviewText = (value = '') =>
+    normalizeSkillToken(value)
+        .replace(/\./g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+export const toSkillDisplayLines = (skills = [], maxLines = 3) => {
     const entries = normalizeSkillEntries(skills);
     if (!entries.length) {
         return [];
@@ -767,12 +843,33 @@ export const toSkillDisplayLines = (skills = [], maxLines = 10) => {
         ...groupInsertionOrder.filter((groupKey) => !SKILL_CATEGORY_ORDER.includes(groupKey)),
     ];
 
-    return orderedGroups.map((groupKey) => ({
-        heading: groups.get(groupKey).heading,
-        text: groups.get(groupKey).items.join(', ').trim(),
-    }))
-        .filter((line) => Boolean(line.text))
-        .slice(0, maxLines);
+    const orderedSkills = orderedGroups
+        .flatMap((groupKey) => groups.get(groupKey).items || [])
+        .map((skill) => sanitizeSkillPreviewText(skill))
+        .filter(Boolean);
+
+    const seenSkills = new Set();
+    const primarySkills = orderedSkills.filter((skill) => {
+        const key = toCanonicalSkillKey(skill);
+        if (!key || seenSkills.has(key)) {
+            return false;
+        }
+        seenSkills.add(key);
+        return true;
+    });
+
+    const targetCount = Math.min(3, Math.max(2, Number(maxLines) || 3));
+    const previewSkills = primarySkills.slice(0, targetCount);
+    if (!previewSkills.length) {
+        return [];
+    }
+
+    return [
+        {
+            heading: '',
+            text: previewSkills.join(', '),
+        },
+    ];
 };
 
 export const toSkillInlineText = (skills = [], separator = ', ', maxLines = 10) =>
@@ -788,12 +885,25 @@ export const formatEducationDegreeYear = (educationItem = {}) => {
     return joinNonEmpty([degree, yearRange ? `(${yearRange})` : ' '], ' ');
 };
 
-export const toBullets = (value, fallbackBullets = []) => {
+const resolveBulletMaxLines = (options = undefined) => {
+    if (typeof options === 'number') {
+        return clampBulletLineCount(options);
+    }
+
+    if (options && typeof options === 'object') {
+        return clampBulletLineCount(options.maxLines);
+    }
+
+    return 3;
+};
+
+export const toBullets = (value, fallbackBullets = [], options = undefined) => {
     const text = normalizeMultiline(value);
     const bulletPrefix = /^[\u2022*-]\s*/;
+    const maxBulletLines = resolveBulletMaxLines(options);
 
     if (!text) {
-        return ensureThreeBulletLines([], fallbackBullets);
+        return ensureBulletLines([], fallbackBullets, maxBulletLines);
     }
 
     const explicitLines = text
@@ -802,11 +912,11 @@ export const toBullets = (value, fallbackBullets = []) => {
         .filter(Boolean);
 
     if (explicitLines.length > 1) {
-        return ensureThreeBulletLines(explicitLines, fallbackBullets);
+        return ensureBulletLines(explicitLines, fallbackBullets, maxBulletLines);
     }
 
     if (explicitLines.length === 1 && bulletPrefix.test(text)) {
-        return ensureThreeBulletLines(explicitLines, fallbackBullets);
+        return ensureBulletLines(explicitLines, fallbackBullets, maxBulletLines);
     }
 
     const sentenceLines = text
@@ -815,8 +925,8 @@ export const toBullets = (value, fallbackBullets = []) => {
         .filter(Boolean);
 
     if (sentenceLines.length) {
-        const base = sentenceLines.slice(0, 3);
-        if (base.length === 3) {
+        const base = sentenceLines.slice(0, maxBulletLines);
+        if (base.length === maxBulletLines) {
             return base;
         }
 
@@ -828,8 +938,8 @@ export const toBullets = (value, fallbackBullets = []) => {
                 .filter(Boolean),
         ]);
 
-        return ensureThreeBulletLines(expanded, fallbackBullets);
+        return ensureBulletLines(expanded, fallbackBullets, maxBulletLines);
     }
 
-    return ensureThreeBulletLines([], fallbackBullets);
+    return ensureBulletLines([], fallbackBullets, maxBulletLines);
 };
