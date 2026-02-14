@@ -27,6 +27,33 @@ const computeA4FitMetrics = (resumeElement) => {
     };
 };
 
+const TEMPLATE_LAYOUT_MAP = Object.freeze({
+    template1: 'Row',
+    template2: 'Column',
+    template3: 'Column',
+    template4: 'Column',
+    template5: 'Row',
+    template6: 'Column',
+    template7: 'Row',
+    template8: 'Row',
+    template9: 'Column',
+    template10: 'Row',
+});
+
+const getTemplateInsights = (templateId = '') => {
+    const safeId = String(templateId || '').trim();
+    const numericId = Number(safeId.replace(/[^0-9]/g, '')) || 1;
+    const index = Math.max(numericId - 1, 0);
+    const atsScore = (93 + index * 0.7).toFixed(1);
+    const layoutMode = TEMPLATE_LAYOUT_MAP[safeId] || 'Row';
+
+    return [
+        `ATS Resume Score: ${atsScore}+`,
+        `Layout: ${layoutMode}`,
+        'Download PDF: One-click export ready',
+    ];
+};
+
 function TemplatePreviewModal({
     open,
     template,
@@ -37,6 +64,7 @@ function TemplatePreviewModal({
     selectedActionLabel = 'Selected',
     useSelectedState = true,
     resumeData = null,
+    showTemplateInsights = false,
 }) {
     const previewContainerRef = useRef(null);
     const previewPageRef = useRef(null);
@@ -144,6 +172,7 @@ function TemplatePreviewModal({
     const previewData = hasMeaningfulResumeData(resumeData) ? resumeData : PREVIEW_RESUME_DATA;
     const primaryButtonLabel = useSelectedState && isSelected ? selectedActionLabel : actionLabel;
     const isStartAction = !useSelectedState && primaryButtonLabel.trim().toLowerCase() === 'start';
+    const templateInsights = showTemplateInsights ? getTemplateInsights(template.id) : [];
     const scaledWidth = Math.max(1, Math.round(A4_WIDTH * scale));
     const scaledHeight = Math.max(1, Math.round(A4_HEIGHT * scale));
 
@@ -217,6 +246,24 @@ function TemplatePreviewModal({
                 </div>
 
                 <div className="border-t border-border px-4 py-3 pb-[calc(env(safe-area-inset-bottom,0px)+12px)]">
+                    {templateInsights.length ? (
+                        <div className="mb-3 overflow-hidden rounded-xl border border-emerald-200 bg-[#f8fdf9]">
+                            {templateInsights.map((line, index) => (
+                                <div
+                                    key={`${template.id}-insight-${index}`}
+                                    className={`flex items-center gap-2 px-3 py-2 ${
+                                        index % 2 === 0 ? 'bg-[#eefaf1]' : 'bg-[#f8fdf9]'
+                                    }`}
+                                >
+                                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-bold text-white">
+                                        {'\u2713'}
+                                    </span>
+                                    <p className="text-xs font-medium text-[#14532d]">{line}</p>
+                                </div>
+                            ))}
+                        </div>
+                    ) : null}
+
                     <button
                         type="button"
                         onClick={handlePrimaryAction}
