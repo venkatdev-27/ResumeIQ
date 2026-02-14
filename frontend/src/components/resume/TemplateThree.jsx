@@ -109,6 +109,20 @@ function TemplateThree({ resumeData, formData }) {
                                 </ul>
                             </section>
                         ) : null}
+
+                        {data.hobbies.length > 0 ? (
+                            <section className="min-w-0 space-y-1">
+                                <div>
+                                    <h2 className={sidebarHeadingClass}>Hobbies</h2>
+                                    <hr className={sidebarRuleClass} />
+                                </div>
+                                <ul className="list-disc space-y-1 pl-4 text-sm marker:text-[#2563eb]">
+                                    {data.hobbies.map((item) => (
+                                        <li key={item} className="break-words text-[#1e3a8a]">{item}</li>
+                                    ))}
+                                </ul>
+                            </section>
+                        ) : null}
                     </aside>
 
                     <main className="min-w-0 space-y-3 rounded-lg bg-white p-3">
