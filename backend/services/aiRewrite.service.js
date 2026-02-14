@@ -485,9 +485,9 @@ const buildContextDrivenSummary = (resumeData = {}) => {
     const hasContextData =
         Boolean(compactToOneLine(resumeData?.personalDetails?.title || '')) ||
         summarySkills.length > 0 ||
-        hasText(workLabel) ||
-        hasText(internshipLabel) ||
-        hasText(projectLabel);
+        hasAnyText(workLabel) ||
+        hasAnyText(internshipLabel) ||
+        hasAnyText(projectLabel);
 
     if (!hasContextData) {
         return buildDefaultProfessionalSummary();
