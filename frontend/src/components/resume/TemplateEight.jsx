@@ -96,7 +96,7 @@ function TemplateEight({ resumeData, formData }) {
                     ) : null}
                 </section>
 
-                <section className="grid grid-cols-2 gap-2">
+                <section className="grid grid-cols-3 gap-2">
                     {data.certifications.length > 0 ? (
                         <div className="space-y-1">
                             <h2 className="border-b border-blue-300 pb-0.5 text-xs font-bold uppercase tracking-wide text-blue-700">Certifications</h2>
@@ -117,6 +117,16 @@ function TemplateEight({ resumeData, formData }) {
                             </ul>
                         </div>
                     ) : null}
+                    {data.hobbies.length > 0 ? (
+                        <div className="space-y-1">
+                            <h2 className="border-b border-blue-300 pb-0.5 text-xs font-bold uppercase tracking-wide text-blue-700">Hobbies</h2>
+                            <ul className="list-disc space-y-1 pl-4 text-sm">
+                                {data.hobbies.map((item) => (
+                                    <li key={item} className="break-words">{item}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : null}
                 </section>
             </div>
         </div>
@@ -124,7 +134,6 @@ function TemplateEight({ resumeData, formData }) {
 }
 
 export default React.memo(TemplateEight);
-
 
 
 
