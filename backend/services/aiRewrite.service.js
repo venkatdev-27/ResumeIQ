@@ -1,4 +1,4 @@
-const { Client } = require('@google/genai');
+const { google } = require('@google/genai');
 const { AppError } = require('../utils/response');
 
 let aiClient = null;
@@ -12,7 +12,7 @@ const getGeminiClient = () => {
 
     if (!aiClient) {
         try {
-            aiClient = new Client({ apiKey: process.env.GEMINI_API_KEY });
+            aiClient = new google.GenAI({ apiKey: process.env.GEMINI_API_KEY });
         } catch (error) {
             console.error('Failed to initialize Gemini Client:', error);
             throw new AppError('Failed to initialize AI service.', 500);

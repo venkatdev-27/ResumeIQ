@@ -1,4 +1,4 @@
-const { Client } = require('@google/genai');
+const { google } = require('@google/genai');
 const { ATS_PRIORITY_KEYWORDS } = require('../constants/atsKeywords');
 const { extractKeywordsFromText } = require('./keywordExtract.service');
 const {
@@ -25,7 +25,7 @@ const getAiClient = () => {
 
     if (!aiClient) {
         try {
-            aiClient = new Client({ apiKey: process.env.GEMINI_API_KEY });
+            aiClient = new google.GenAI({ apiKey: process.env.GEMINI_API_KEY });
         } catch (error) {
             console.error('Failed to initialize Gemini Client:', error);
             return null;
