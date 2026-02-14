@@ -331,7 +331,7 @@ function ATSResults() {
                                 <div className="min-w-0">
                                     <h3 className="font-ui-heading text-[1.25rem] font-bold text-[#111111]">Get AI Improvements</h3>
                                     <p className="mt-1 text-sm text-[#4b4b53]">
-                                        Gemini AI reviews your resume content and returns missing keywords, weak areas, and recommendations.
+                                        AI reviews your resume content and returns missing keywords, weak areas, and recommendations.
                                     </p>
                                 </div>
                                 <Button onClick={handleFetchAI} loading={ai.status === 'loading'} size="sm" className="w-full sm:w-auto">
