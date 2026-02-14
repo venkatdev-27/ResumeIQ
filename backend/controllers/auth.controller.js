@@ -82,7 +82,12 @@ const login = asyncHandler(async (req, res) => {
 });
 
 const getMe = asyncHandler(async (req, res) => {
-    const user = await User.findById(req.user._id).lean();
+    const userId = req.user?._id;
+    if (!userId) {
+        throw new AppError('Unauthorized user context.', 401);
+    }
+
+    const user = await User.findById(userId).lean();
     if (!user) {
         throw new AppError('User not found.', 404);
     }
