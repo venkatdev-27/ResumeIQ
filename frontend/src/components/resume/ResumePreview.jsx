@@ -109,9 +109,36 @@ const applyVisibilityMask = (previewData = {}, maskSource = {}) => {
     };
 };
 
+const computeA4FitMetrics = (resumeElement) => {
+    if (!resumeElement) {
+        return { scale: 1, offsetX: 0 };
+    }
+
+    const contentWidth = Math.max(
+        A4_WIDTH,
+        Math.ceil(resumeElement.scrollWidth || 0),
+        Math.ceil(resumeElement.offsetWidth || 0),
+    );
+    const contentHeight = Math.max(
+        A4_HEIGHT,
+        Math.ceil(resumeElement.scrollHeight || 0),
+        Math.ceil(resumeElement.offsetHeight || 0),
+    );
+
+    const fitScale = Math.min(1, A4_WIDTH / contentWidth, A4_HEIGHT / contentHeight);
+    const offsetX = Math.max(0, Math.floor((A4_WIDTH - contentWidth * fitScale) / 2));
+
+    return {
+        scale: Number.isFinite(fitScale) && fitScale > 0 ? fitScale : 1,
+        offsetX,
+    };
+};
 
 
-const buildPdfHtmlDocument = (resumeElement) => {
+
+const buildPdfHtmlDocument = (resumeElement, fitMetrics = { scale: 1, offsetX: 0 }) => {
+    const safeScale = Number.isFinite(fitMetrics.scale) && fitMetrics.scale > 0 ? fitMetrics.scale : 1;
+    const safeOffsetX = Number.isFinite(fitMetrics.offsetX) && fitMetrics.offsetX > 0 ? fitMetrics.offsetX : 0;
     const styleTags = Array.from(document.querySelectorAll('style'))
         .map((node) => `<style>${node.textContent || ''}</style>`)
         .join('');
@@ -134,9 +161,38 @@ const buildPdfHtmlDocument = (resumeElement) => {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     ${stylesheetLinks}
     ${styleTags}
+    <style>
+      @page {
+        size: A4;
+        margin: 0;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 210mm;
+        height: 297mm;
+        background: #ffffff;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .pdf-page {
+        width: ${A4_WIDTH}px;
+        height: ${A4_HEIGHT}px;
+        overflow: hidden;
+        background: #ffffff;
+      }
+      .pdf-content {
+        width: ${A4_WIDTH}px;
+        transform-origin: top left;
+        transform: translateX(${safeOffsetX}px) scale(${safeScale});
+      }
+    </style>
   </head>
-  <body style="margin:0;padding:0;background:#ffffff;">
-    ${resumeElement.outerHTML}
+  <body>
+    <div class="pdf-page">
+      <div class="pdf-content">${resumeElement.outerHTML}</div>
+    </div>
   </body>
 </html>`;
 };
@@ -153,9 +209,10 @@ function ResumePreview({ resumeData, enhancedResume, formData, template }) {
     const containerRef = useRef(null);
     const previewRef = useRef(null);
     const [scale, setScale] = useState(1);
+    const [contentFitScale, setContentFitScale] = useState(1);
+    const [contentOffsetX, setContentOffsetX] = useState(0);
     const [downloadStatus, setDownloadStatus] = useState('idle');
     const [downloadError, setDownloadError] = useState(null);
-    const isMobile = scale < 0.7;
 
     useEffect(() => {
         const element = containerRef.current;
@@ -173,7 +230,7 @@ function ResumePreview({ resumeData, enhancedResume, formData, template }) {
             // Improved minimum scale for very small screens
             // Allow smaller scale to ensure all content is visible
             // On very small screens, allow fit-scale without forcing a larger minimum.
-            const mobileMinScale = width <= 350 ? 0.01 : width < 450 ? 0.45 : 0.6;
+            const mobileMinScale = width <= 350 ? 0.01 : width < 450 ? 0.4 : 0.6;
 
             // Clamp between min and 1
             const nextScale = Math.min(Math.max(fitScale, mobileMinScale), 1);
@@ -200,6 +257,39 @@ function ResumePreview({ resumeData, enhancedResume, formData, template }) {
         };
     }, []);
 
+    useEffect(() => {
+        const previewRoot = previewRef.current;
+        const resumeElement = previewRoot?.querySelector('#resume-pdf');
+        if (!resumeElement) {
+            setContentFitScale(1);
+            setContentOffsetX(0);
+            return undefined;
+        }
+
+        let frameId = null;
+
+        const updateMetrics = () => {
+            const metrics = computeA4FitMetrics(resumeElement);
+            setContentFitScale((prev) => (Math.abs(prev - metrics.scale) < 0.005 ? prev : metrics.scale));
+            setContentOffsetX((prev) => (Math.abs(prev - metrics.offsetX) < 1 ? prev : metrics.offsetX));
+        };
+
+        const scheduleUpdate = () => {
+            cancelAnimationFrame(frameId);
+            frameId = requestAnimationFrame(updateMetrics);
+        };
+
+        scheduleUpdate();
+
+        const observer = new ResizeObserver(scheduleUpdate);
+        observer.observe(resumeElement);
+
+        return () => {
+            cancelAnimationFrame(frameId);
+            observer.disconnect();
+        };
+    }, [previewData, SelectedTemplate]);
+
 
     const handleDownloadPdf = async () => {
         const previewRoot = previewRef.current;
@@ -218,7 +308,8 @@ function ResumePreview({ resumeData, enhancedResume, formData, template }) {
         setDownloadError(null);
 
         try {
-            const html = buildPdfHtmlDocument(resumeElement);
+            const fitMetrics = computeA4FitMetrics(resumeElement);
+            const html = buildPdfHtmlDocument(resumeElement, fitMetrics);
             const responseBlob = await generateResumePdfAPI({
                 html,
                 fileName: 'resume.pdf',
@@ -257,22 +348,31 @@ function ResumePreview({ resumeData, enhancedResume, formData, template }) {
                     className="mx-auto overflow-hidden bg-white shadow-sm"
                     style={{ 
                         width: scaledWidth, 
-                        height: isMobile ? scaledHeight * 1.1 : "auto",
+                        height: scaledHeight,
                         minWidth: '100%',
                         boxSizing: 'border-box'
                     }}
                 >
                     <div
-                        ref={previewRef}
                         style={{
                             width: A4_WIDTH,
+                            height: A4_HEIGHT,
                             transform: `scale(${scale})`,
                             transformOrigin: 'top left',
-                            minWidth: '100%',
-                            minHeight: '100%'
+                            minWidth: '100%'
                         }}
                     >
-                        <SelectedTemplate resumeData={previewData} formData={formData} />
+                        <div ref={previewRef} className="w-[794px]">
+                            <div
+                                style={{
+                                    width: A4_WIDTH,
+                                    transform: `translateX(${contentOffsetX}px) scale(${contentFitScale})`,
+                                    transformOrigin: 'top left',
+                                }}
+                            >
+                                <SelectedTemplate resumeData={previewData} formData={formData} />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
