@@ -64,7 +64,64 @@ const normalizeImprovedText = (value) =>
         .replace(/\r/g, '\n')
         .trim();
 
-const normalizeSimpleText = (value) => String(value || '').trim();
+const normalizeSimpleText = (value) =>
+    String(value || '')
+        .replace(/\r\n/g, ' ')
+        .replace(/\r/g, ' ')
+        .replace(/\n/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+const normalizeSummaryToFourLines = (value = '') => {
+    const lines = String(value || '')
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    const sentenceSplit = String(value || '')
+        .replace(/\r\n/g, ' ')
+        .replace(/\r/g, ' ')
+        .replace(/\n/g, ' ')
+        .split(/(?<=[.!?])\s+/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    const merged = [];
+    const pushUnique = (item) => {
+        const text = normalizeSimpleText(item);
+        if (!text) {
+            return;
+        }
+        if (!merged.some((line) => line.toLowerCase() === text.toLowerCase())) {
+            merged.push(text);
+        }
+    };
+
+    lines.forEach(pushUnique);
+    sentenceSplit.forEach(pushUnique);
+    String(value || '')
+        .replace(/\r\n/g, ' ')
+        .replace(/\r/g, ' ')
+        .replace(/\n/g, ' ')
+        .split(/[,;]\s+/)
+        .forEach(pushUnique);
+
+    if (!merged.length) {
+        return '';
+    }
+
+    const fixed = [...merged];
+    const seed = [...merged];
+    let index = 0;
+    while (fixed.length < 4 && seed.length) {
+        fixed.push(seed[index % seed.length]);
+        index += 1;
+    }
+
+    return fixed.slice(0, 4).join('\n');
+};
 
 const hasAnyText = (...values) => values.some((value) => Boolean(String(value || '').trim()));
 
@@ -122,6 +179,43 @@ const textToBullets = (value = '', max = 3) =>
         .map((item) => normalizeBulletLine(item))
         .filter(Boolean)
         .slice(0, max);
+
+const ensureThreeBullets = (value = []) => {
+    const base = normalizeBullets(value, 6);
+    const expanded = base.flatMap((line) =>
+        String(line || '')
+            .split(/[,;]\s+/)
+            .map((part) => normalizeBulletLine(part))
+            .filter(Boolean),
+    );
+    const merged = [];
+    const pushUnique = (item) => {
+        const text = normalizeBulletLine(item);
+        if (!text) {
+            return;
+        }
+        if (!merged.some((line) => line.toLowerCase() === text.toLowerCase())) {
+            merged.push(text);
+        }
+    };
+
+    base.forEach(pushUnique);
+    expanded.forEach(pushUnique);
+
+    if (!merged.length) {
+        return [];
+    }
+
+    const fixed = [...merged];
+    const seed = [...merged];
+    let index = 0;
+    while (fixed.length < 3 && seed.length) {
+        fixed.push(seed[index % seed.length]);
+        index += 1;
+    }
+
+    return fixed.slice(0, 3);
+};
 
 const sanitizeResumeDataForAI = (resumeData = {}) => {
     const safeResumeData = resumeData && typeof resumeData === 'object' ? resumeData : {};
@@ -194,7 +288,7 @@ const applySequentialDescriptionImprovements = ({ entries = [], improvedEntries 
 
         const bullets = normalizeBullets(aiEntry.bullets);
         const fallbackBullets = textToBullets(aiEntry.improvedDescription || aiEntry.description || '');
-        const finalBullets = bullets.length ? bullets : fallbackBullets;
+        const finalBullets = ensureThreeBullets(bullets.length ? bullets : fallbackBullets);
 
         if (!finalBullets.length) {
             return entry;
@@ -211,7 +305,7 @@ const applyAiImprovementsToResume = (resumeData, improved) => {
     const next = mergeResumeData(resumeData);
 
     if (improved?.summary) {
-        next.personalDetails.summary = normalizeImprovedText(improved.summary);
+        next.personalDetails.summary = normalizeSummaryToFourLines(improved.summary);
     }
 
     if (Array.isArray(improved?.workExperience) && improved.workExperience.length) {
@@ -240,6 +334,10 @@ const applyAiImprovementsToResume = (resumeData, improved) => {
 
     if (Array.isArray(improved?.skills) && improved.skills.length) {
         next.skills = normalizeUniqueStrings(improved.skills, 20);
+    }
+
+    if (Array.isArray(improved?.certifications) && improved.certifications.length) {
+        next.certifications = normalizeUniqueStrings(improved.certifications, 20);
     }
 
     if (Array.isArray(improved?.achievements) && improved.achievements.length) {
