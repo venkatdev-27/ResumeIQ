@@ -1,6 +1,7 @@
 const { AppError } = require('../utils/response');
 const { clamp, calculateSectionQualityScore } = require('../utils/scoreCalculator');
 const { normalizeText, tokenize } = require('../utils/normalizeText');
+const { requestChatCompletion } = require('./aiClient.service');
 const {
     extractKeywordsFromText,
     normalizeKeywordTerm,
@@ -16,6 +17,9 @@ const {
 const MAX_RESULT_KEYWORDS = 120;
 const MAX_OUTPUT_LIST = 120;
 const MAX_RECOMMENDATIONS = 12;
+const MAX_AI_RESUME_TEXT_CHARS = 5000;
+const MAX_AI_JD_TEXT_CHARS = 4500;
+const MAX_AI_LIST_PREVIEW = 80;
 
 const ensureObject = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
 
@@ -27,6 +31,82 @@ const toTitleCase = (value = '') =>
         .trim();
 
 const hasAnyText = (...values) => values.some((value) => Boolean(String(value || '').trim()));
+
+const truncateText = (value = '', max = 1200) => String(value || '').trim().slice(0, max);
+
+const toSafeAiJson = (value, max = 3000) => JSON.stringify(value ?? '').slice(0, max);
+
+const normalizeRecommendationList = (values = [], max = MAX_RECOMMENDATIONS) => {
+    const seen = new Set();
+    return (Array.isArray(values) ? values : [])
+        .map((item) => String(item || '').trim())
+        .filter((item) => {
+            if (!item) {
+                return false;
+            }
+            const key = item.toLowerCase();
+            if (seen.has(key)) {
+                return false;
+            }
+            seen.add(key);
+            return true;
+        })
+        .slice(0, max);
+};
+
+const parseJsonCandidate = (value = '') => {
+    const cleaned = String(value || '')
+        .replace(/```json/gi, '')
+        .replace(/```/g, '')
+        .trim();
+
+    if (!cleaned) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(cleaned);
+    } catch (_error) {
+        const firstBrace = cleaned.indexOf('{');
+        const lastBrace = cleaned.lastIndexOf('}');
+        if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) {
+            return null;
+        }
+
+        try {
+            return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+        } catch (_innerError) {
+            return null;
+        }
+    }
+};
+
+const extractProfession = ({ resumeData = {}, resumeText = '' }) => {
+    const safeResumeData = ensureObject(resumeData);
+    const personalDetails = ensureObject(safeResumeData.personalDetails);
+    const explicitTitle = String(personalDetails.title || '').trim();
+    if (explicitTitle) {
+        return explicitTitle.slice(0, 140);
+    }
+
+    const safeResumeText = String(resumeText || '');
+    const labeledMatch = safeResumeText.match(/\b(?:title|role|position)\s*:\s*([^\n\r]+)/i);
+    if (labeledMatch?.[1]) {
+        return labeledMatch[1].trim().slice(0, 140);
+    }
+
+    const firstLines = safeResumeText
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(0, 8);
+
+    const titleLikeLine = firstLines.find((line) =>
+        /(engineer|developer|analyst|scientist|manager|architect|consultant|designer|specialist|administrator)/i.test(line),
+    );
+
+    return String(titleLikeLine || '').slice(0, 140);
+};
 
 const collectResumeDataSkills = (resumeData = {}) => {
     const safeResumeData = ensureObject(resumeData);
@@ -290,6 +370,178 @@ const buildRecommendations = (missingKeywords = []) => {
     return recommendations;
 };
 
+const buildAiAtsPrompt = ({
+    profession = '',
+    resumeText = '',
+    jobDescription = '',
+    normalizedUserSkills = [],
+    normalizedResumeSkills = [],
+    jobDescriptionKeywords = [],
+    matchedKeywords = [],
+    missingSkills = [],
+    missingKeywords = [],
+    coverageScore = 0,
+    densityScore = 0,
+    sectionScore = 0,
+    atsScore = 0,
+}) => {
+    const professionPreview = truncateText(profession, 140);
+    const resumePreview = truncateText(resumeText, MAX_AI_RESUME_TEXT_CHARS);
+    const jdPreview = truncateText(jobDescription, MAX_AI_JD_TEXT_CHARS);
+
+    return `You are a strict ATS scoring engine.
+
+Return ONLY valid JSON with this exact schema:
+{
+  "atsScore": 0,
+  "coverageScore": 0,
+  "densityScore": 0,
+  "sectionScore": 0,
+  "matchedKeywords": ["string"],
+  "missingSkills": ["string"],
+  "missingKeywords": ["string"],
+  "recommendations": ["string"]
+}
+
+Rules:
+1. Score dynamically using resume content, profession, user skills, and job description.
+2. Do not output dummy/fixed scores.
+3. Keep scores realistic integers 0-100.
+4. missingSkills must contain technical JD terms absent or weak in the resume.
+5. missingKeywords must contain non-technical JD terms absent or weak in the resume.
+6. Recommendations must be actionable and based only on missingSkills/missingKeywords.
+7. Do not invent unrelated keywords.
+
+Context:
+profession: ${toSafeAiJson(professionPreview, 220)}
+userSkillsNormalized: ${toSafeAiJson(normalizedUserSkills.slice(0, MAX_AI_LIST_PREVIEW), 2200)}
+resumeSkillsNormalized: ${toSafeAiJson(normalizedResumeSkills.slice(0, MAX_AI_LIST_PREVIEW), 2200)}
+jobDescriptionKeywords: ${toSafeAiJson(jobDescriptionKeywords.slice(0, MAX_AI_LIST_PREVIEW), 2600)}
+baselineMatchedKeywords: ${toSafeAiJson(matchedKeywords.slice(0, MAX_AI_LIST_PREVIEW), 2600)}
+baselineMissingSkills: ${toSafeAiJson(missingSkills.slice(0, MAX_AI_LIST_PREVIEW), 2600)}
+baselineMissingKeywords: ${toSafeAiJson(missingKeywords.slice(0, MAX_AI_LIST_PREVIEW), 2600)}
+baselineScores: ${toSafeAiJson({ atsScore, coverageScore, densityScore, sectionScore }, 600)}
+resumeText: ${toSafeAiJson(resumePreview, MAX_AI_RESUME_TEXT_CHARS + 200)}
+jobDescriptionText: ${toSafeAiJson(jdPreview, MAX_AI_JD_TEXT_CHARS + 200)}`;
+};
+
+const normalizeAiScore = (value, fallback = 0) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return Math.round(clamp(fallback));
+    }
+    return Math.round(clamp(numeric));
+};
+
+const sanitizeAiKeywordList = ({
+    values = [],
+    jdKeywordSet = new Set(),
+    technicalOnly = false,
+    nonTechnicalOnly = false,
+    excludeSet = new Set(),
+}) =>
+    dedupeNormalizedKeywords(values, MAX_OUTPUT_LIST)
+        .filter((keyword) => {
+            if (!jdKeywordSet.has(keyword)) {
+                return false;
+            }
+
+            if (excludeSet.has(keyword)) {
+                return false;
+            }
+
+            if (technicalOnly) {
+                return isTechnicalKeyword(keyword);
+            }
+
+            if (nonTechnicalOnly) {
+                return !isTechnicalKeyword(keyword);
+            }
+
+            return true;
+        })
+        .slice(0, MAX_OUTPUT_LIST);
+
+const refineAtsScoreWithAi = async ({
+    profession = '',
+    combinedResumeText = '',
+    normalizedJobDescription = '',
+    normalizedUserSkills = [],
+    normalizedResumeSkills = [],
+    jobDescriptionKeywords = [],
+    matchedKeywords = [],
+    missingSkills = [],
+    missingKeywords = [],
+    coverageScore = 0,
+    densityScore = 0,
+    sectionScore = 0,
+    atsScore = 0,
+}) => {
+    if (!String(process.env.OPENROUTER_API_KEY || '').trim()) {
+        return null;
+    }
+
+    const prompt = buildAiAtsPrompt({
+        profession,
+        resumeText: combinedResumeText,
+        jobDescription: normalizedJobDescription,
+        normalizedUserSkills,
+        normalizedResumeSkills,
+        jobDescriptionKeywords,
+        matchedKeywords,
+        missingSkills,
+        missingKeywords,
+        coverageScore,
+        densityScore,
+        sectionScore,
+        atsScore,
+    });
+
+    const responseText = await requestChatCompletion({
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        maxTokens: 1200,
+        jsonMode: true,
+        expectJson: true,
+        timeoutMs: 60_000,
+    });
+
+    const parsed = ensureObject(parseJsonCandidate(responseText));
+    if (!Object.keys(parsed).length) {
+        return null;
+    }
+
+    const jdKeywordSet = new Set(jobDescriptionKeywords);
+    const safeMatched = sanitizeAiKeywordList({
+        values: parsed.matchedKeywords,
+        jdKeywordSet,
+    });
+    const safeMissingSkills = sanitizeAiKeywordList({
+        values: parsed.missingSkills,
+        jdKeywordSet,
+        technicalOnly: true,
+        excludeSet: new Set(safeMatched),
+    });
+    const safeMissingKeywords = sanitizeAiKeywordList({
+        values: parsed.missingKeywords,
+        jdKeywordSet,
+        nonTechnicalOnly: true,
+        excludeSet: new Set([...safeMatched, ...safeMissingSkills]),
+    });
+    const safeRecommendations = normalizeRecommendationList(parsed.recommendations, MAX_RECOMMENDATIONS);
+
+    return {
+        atsScore: normalizeAiScore(parsed.atsScore, atsScore),
+        coverageScore: normalizeAiScore(parsed.coverageScore, coverageScore),
+        densityScore: normalizeAiScore(parsed.densityScore, densityScore),
+        sectionScore: normalizeAiScore(parsed.sectionScore, sectionScore),
+        matchedKeywords: safeMatched,
+        missingSkills: safeMissingSkills,
+        missingKeywords: safeMissingKeywords,
+        recommendations: safeRecommendations,
+    };
+};
+
 const calculateAtsScore = async ({
     resumeText,
     resumeData = null,
@@ -303,6 +555,10 @@ const calculateAtsScore = async ({
     }
 
     const safeResumeData = ensureObject(resumeData);
+    const profession = extractProfession({
+        resumeData: safeResumeData,
+        resumeText: normalizedResumeText,
+    });
     const resumeSectionsText = buildResumeSectionsText(safeResumeData);
     const combinedResumeText = normalizeText([normalizedResumeText, resumeSectionsText].filter(Boolean).join('\n'));
     const normalizedJobDescription = normalizeText(jobDescription || '');
@@ -334,10 +590,6 @@ const calculateAtsScore = async ({
     );
 
     const resumeSet = new Set(normalizedResumeSkills);
-
-    const matchedKeywords = jobDescriptionKeywords.filter((keyword) => resumeSet.has(keyword));
-    const missingKeywords = jobDescriptionKeywords.filter((keyword) => !resumeSet.has(keyword));
-    const missingSkills = missingKeywords.filter((keyword) => isTechnicalKeyword(keyword));
     const resumeSearchText = buildSearchText(combinedResumeText);
     const keywordPresenceMap = new Map(
         jobDescriptionKeywords.map((keyword) => [
@@ -345,6 +597,23 @@ const calculateAtsScore = async ({
             countKeywordOccurrences(resumeSearchText, keyword),
         ]),
     );
+
+    const isKeywordPresentInResume = (keyword = '') => {
+        const normalized = normalizeKeywordTerm(keyword);
+        const key = normalized || keyword;
+        const occurrences = Number(keywordPresenceMap.get(key) || 0);
+
+        if (occurrences > 0) {
+            return true;
+        }
+
+        return resumeSet.has(key);
+    };
+
+    const allMissingKeywords = jobDescriptionKeywords.filter((keyword) => !isKeywordPresentInResume(keyword));
+    const matchedKeywords = jobDescriptionKeywords.filter((keyword) => isKeywordPresentInResume(keyword));
+    const missingSkills = allMissingKeywords.filter((keyword) => isTechnicalKeyword(keyword));
+    const missingKeywords = allMissingKeywords.filter((keyword) => !isTechnicalKeyword(keyword));
 
     const coverageScore = jobDescriptionKeywords.length
         ? calculateCoverageScore({
@@ -377,22 +646,73 @@ const calculateAtsScore = async ({
     );
     const sectionScore = clamp(skillsSectionStrength * 0.55 + sectionCompleteness * 0.45);
 
-    const atsScore = Math.round(clamp(coverageScore * 0.5 + densityScore * 0.2 + sectionScore * 0.3));
-    const recommendations = buildRecommendations(missingKeywords);
+    const baseAtsScore = Math.round(clamp(coverageScore * 0.5 + densityScore * 0.2 + sectionScore * 0.3));
+    const baseRecommendations = buildRecommendations(allMissingKeywords);
+
+    let finalAtsScore = baseAtsScore;
+    let finalCoverageScore = coverageScore;
+    let finalDensityScore = densityScore;
+    let finalSectionScore = sectionScore;
+    let finalMatchedKeywords = matchedKeywords;
+    let finalMissingSkills = missingSkills;
+    let finalMissingKeywords = missingKeywords;
+    let finalRecommendations = baseRecommendations;
+
+    try {
+        const aiRefinement = await refineAtsScoreWithAi({
+            profession,
+            combinedResumeText,
+            normalizedJobDescription,
+            normalizedUserSkills,
+            normalizedResumeSkills,
+            jobDescriptionKeywords,
+            matchedKeywords,
+            missingSkills,
+            missingKeywords,
+            coverageScore,
+            densityScore,
+            sectionScore,
+            atsScore: baseAtsScore,
+        });
+
+        if (aiRefinement) {
+            finalAtsScore = aiRefinement.atsScore;
+            finalCoverageScore = aiRefinement.coverageScore;
+            finalDensityScore = aiRefinement.densityScore;
+            finalSectionScore = aiRefinement.sectionScore;
+
+            if (aiRefinement.matchedKeywords.length) {
+                finalMatchedKeywords = aiRefinement.matchedKeywords;
+            }
+
+            if (aiRefinement.missingSkills.length || aiRefinement.missingKeywords.length) {
+                finalMissingSkills = aiRefinement.missingSkills.length ? aiRefinement.missingSkills : missingSkills;
+                finalMissingKeywords = aiRefinement.missingKeywords.length ? aiRefinement.missingKeywords : missingKeywords;
+            }
+
+            if (aiRefinement.recommendations.length) {
+                finalRecommendations = aiRefinement.recommendations;
+            } else {
+                finalRecommendations = buildRecommendations([...finalMissingSkills, ...finalMissingKeywords]);
+            }
+        }
+    } catch (_error) {
+        finalRecommendations = baseRecommendations;
+    }
 
     const result = {
         extractedResumeSkills: extractedResumeSkills.slice(0, MAX_RESULT_KEYWORDS),
         normalizedResumeSkills: normalizedResumeSkills.slice(0, MAX_RESULT_KEYWORDS),
         normalizedUserSkills: normalizedUserSkills.slice(0, MAX_OUTPUT_LIST),
         jobDescriptionKeywords: jobDescriptionKeywords.slice(0, MAX_RESULT_KEYWORDS),
-        matchedKeywords: matchedKeywords.slice(0, MAX_OUTPUT_LIST),
-        missingKeywords: missingKeywords.slice(0, MAX_OUTPUT_LIST),
-        missingSkills: missingSkills.slice(0, MAX_OUTPUT_LIST),
-        atsScore,
-        coverageScore: Math.round(coverageScore),
-        densityScore: Math.round(densityScore),
-        sectionScore: Math.round(sectionScore),
-        recommendations,
+        matchedKeywords: finalMatchedKeywords.slice(0, MAX_OUTPUT_LIST),
+        missingKeywords: finalMissingKeywords.slice(0, MAX_OUTPUT_LIST),
+        missingSkills: finalMissingSkills.slice(0, MAX_OUTPUT_LIST),
+        atsScore: Math.round(clamp(finalAtsScore)),
+        coverageScore: Math.round(clamp(finalCoverageScore)),
+        densityScore: Math.round(clamp(finalDensityScore)),
+        sectionScore: Math.round(clamp(finalSectionScore)),
+        recommendations: finalRecommendations,
     };
 
     return result;
