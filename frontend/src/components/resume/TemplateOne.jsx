@@ -97,7 +97,7 @@ function TemplateOne({ resumeData, formData }) {
                     </section>
                 ) : null}
 
-                <section className="grid grid-cols-2 gap-3">
+                <section className="grid grid-cols-3 gap-3">
                     {data.certifications.length > 0 ? (
                         <div className="space-y-1">
                             <h2 className="border-b border-gray-300 pb-0.5 text-xs font-bold uppercase tracking-wide">Certifications</h2>
@@ -118,6 +118,16 @@ function TemplateOne({ resumeData, formData }) {
                             </ul>
                         </div>
                     ) : null}
+                    {data.hobbies.length > 0 ? (
+                        <div className="space-y-1">
+                            <h2 className="border-b border-gray-300 pb-0.5 text-xs font-bold uppercase tracking-wide">Hobbies</h2>
+                            <ul className="list-disc space-y-1 pl-4 text-sm">
+                                {data.hobbies.map((item) => (
+                                    <li key={item} className="break-words">{item}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : null}
                 </section>
             </div>
         </div>
@@ -125,7 +135,6 @@ function TemplateOne({ resumeData, formData }) {
 }
 
 export default React.memo(TemplateOne);
-
 
 
 
