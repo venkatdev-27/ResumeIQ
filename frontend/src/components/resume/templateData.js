@@ -303,19 +303,26 @@ const SKILL_CATEGORY_DEFINITIONS = [
         aliases: ['frontend', 'front end', 'fronend', 'ui', 'client side', 'web ui'],
         keywords: [
             'react',
+            'reactjs',
             'next',
             'next.js',
+            'nextjs',
             'vue',
             'angular',
             'svelte',
             'html',
+            'html5',
             'css',
+            'css3',
             'sass',
             'tailwind',
+            'tailwindcss',
             'bootstrap',
             'redux',
             'vite',
             'webpack',
+            'web development',
+            'web developer',
             'responsive design',
         ],
     },
@@ -326,21 +333,36 @@ const SKILL_CATEGORY_DEFINITIONS = [
         keywords: [
             'node',
             'node.js',
+            'nodejs',
             'express',
+            'expressjs',
             'nestjs',
             'django',
             'flask',
+            'fastapi',
             'spring',
+            'spring boot',
+            'springboot',
             'laravel',
             'rails',
             '.net',
+            'dotnet',
+            'asp.net',
             'rest',
+            'restful',
             'graphql',
             'api',
+            'server',
             'jwt',
             'microservice',
             'microservices',
         ],
+    },
+    {
+        key: 'full_stack',
+        label: 'Full Stack',
+        aliases: ['full stack', 'fullstack', 'full stack development', 'mern', 'mean', 'mevn', 'pern', 'lamp'],
+        keywords: ['full stack', 'fullstack', 'mern', 'mean', 'mevn', 'pern', 'lamp', 'jamstack'],
     },
     {
         key: 'ai_ml',
@@ -363,6 +385,8 @@ const SKILL_CATEGORY_DEFINITIONS = [
             'hugging face',
             'langchain',
             'openai',
+            'ai engineer',
+            'ml engineer',
             'prompt engineering',
             'rag',
         ],
@@ -370,14 +394,10 @@ const SKILL_CATEGORY_DEFINITIONS = [
     {
         key: 'data_science',
         label: 'Data Science',
-        aliases: ['data science', 'datascience', 'data sceinece', 'data sciencee', 'data analytics', 'data analysis', 'analytics', 'data visualization', 'bi'],
+        aliases: ['data science', 'datascience', 'data sceinece', 'data sciencee', 'ml research', 'modeling', 'predictive modeling'],
         keywords: [
             'data science',
-            'data analytics',
-            'data analysis',
             'data visualization',
-            'tableau',
-            'power bi',
             'pandas',
             'numpy',
             'scikit',
@@ -393,6 +413,27 @@ const SKILL_CATEGORY_DEFINITIONS = [
         ],
     },
     {
+        key: 'data_analytics',
+        label: 'Data Analytics',
+        aliases: ['data analytics', 'data analyst', 'analytics', 'business intelligence', 'bi', 'reporting'],
+        keywords: [
+            'data analytics',
+            'data analyst',
+            'business intelligence',
+            'dashboard',
+            'reporting',
+            'excel',
+            'tableau',
+            'power bi',
+            'looker',
+            'looker studio',
+            'google analytics',
+            'kpi',
+            'etl',
+            'sql',
+        ],
+    },
+    {
         key: 'databases',
         label: 'Databases',
         aliases: ['database', 'databases', 'db', 'data stores'],
@@ -403,6 +444,9 @@ const SKILL_CATEGORY_DEFINITIONS = [
             'mysql',
             'mariadb',
             'sql',
+            'sql server',
+            'oracle',
+            'snowflake',
             'sqlite',
             'redis',
             'elasticsearch',
@@ -414,7 +458,7 @@ const SKILL_CATEGORY_DEFINITIONS = [
     },
     {
         key: 'devops',
-        label: 'DevOps',
+        label: 'DevOps & Cloud',
         aliases: ['devops', 'dev ops', 'devop', 'deveops', 'infra', 'infrastructure', 'sre', 'platform engineering', 'cloud'],
         keywords: [
             'docker',
@@ -436,6 +480,7 @@ const SKILL_CATEGORY_DEFINITIONS = [
             'shell',
             'prometheus',
             'grafana',
+            'devops engineer',
         ],
     },
     {
@@ -479,9 +524,20 @@ const SKILL_CATEGORY_DEFINITIONS = [
     },
     {
         key: 'other',
-        label: 'Other Skills',
-        aliases: ['other', 'others'],
-        keywords: [],
+        label: 'Specialization',
+        aliases: ['other', 'others', 'specialization', 'role focus'],
+        keywords: [
+            'software development',
+            'software developer',
+            'software engineer',
+            'full stack developer',
+            'backend developer',
+            'frontend developer',
+            'data scientist',
+            'data analyst',
+            'ai engineer',
+            'devops engineer',
+        ],
     },
 ];
 
@@ -502,6 +558,10 @@ const SKILL_KEYWORDS = Object.fromEntries(
 const DATA_SCIENCE_CONTEXT_KEYWORDS = [
     ...SKILL_KEYWORDS.data_science,
     'python',
+];
+
+const DATA_ANALYTICS_CONTEXT_KEYWORDS = [
+    ...SKILL_KEYWORDS.data_analytics,
 ];
 
 const AI_CONTEXT_KEYWORDS = [
@@ -650,6 +710,7 @@ const buildSkillContext = (entries = []) => {
     return {
         hasAiSignals: hasAnyKeywordMatch(joined, AI_CONTEXT_KEYWORDS),
         hasDataScienceSignals: hasAnyKeywordMatch(joined, DATA_SCIENCE_CONTEXT_KEYWORDS),
+        hasDataAnalyticsSignals: hasAnyKeywordMatch(joined, DATA_ANALYTICS_CONTEXT_KEYWORDS),
         hasBackendSignals: hasAnyKeywordMatch(joined, BACKEND_CONTEXT_KEYWORDS),
     };
 };
@@ -672,6 +733,10 @@ const resolveCategoryFromSkill = (skill = '', context = {}) => {
             return 'data_science';
         }
 
+        if (context.hasDataAnalyticsSignals) {
+            return 'data_analytics';
+        }
+
         if (context.hasBackendSignals) {
             return 'backend';
         }
@@ -680,12 +745,24 @@ const resolveCategoryFromSkill = (skill = '', context = {}) => {
     }
 
     if (normalizedSkill === 'sql' || normalizedSkill.startsWith('sql ')) {
+        if (context.hasDataAnalyticsSignals) {
+            return 'data_analytics';
+        }
+
         return context.hasDataScienceSignals ? 'data_science' : 'databases';
     }
 
     const canonicalSkill = toCanonicalSkillKey(normalizedSkill);
     if (canonicalSkill === 'artificialintelligence' || canonicalSkill === 'machinelearning') {
         return 'ai_ml';
+    }
+
+    if (['fullstack', 'fullstackdevelopment', 'mern', 'mean', 'mevn', 'pern', 'lamp'].includes(canonicalSkill)) {
+        return 'full_stack';
+    }
+
+    if (canonicalSkill === 'dataanalyst' || canonicalSkill === 'businessintelligence') {
+        return 'data_analytics';
     }
 
     if (canonicalSkill === 'restapi' || canonicalSkill === 'restapis') {
@@ -710,13 +787,7 @@ const resolveCategoryFromSkill = (skill = '', context = {}) => {
     return 'other';
 };
 
-const sanitizeSkillPreviewText = (value = '') =>
-    normalizeSkillToken(value)
-        .replace(/\./g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-export const toSkillDisplayLines = (skills = [], maxLines = 3) => {
+export const toSkillDisplayLines = (skills = [], maxLines = 14) => {
     const entries = normalizeSkillEntries(skills);
     if (!entries.length) {
         return [];
@@ -744,7 +815,7 @@ export const toSkillDisplayLines = (skills = [], maxLines = 3) => {
                 : 'other';
         const headingLabel = knownCategory
             ? SKILL_CATEGORY_LABELS[resolvedGroupKey]
-            : clean(customHeading) || 'Other Skills';
+            : clean(customHeading) || 'Specialization';
         const normalizedSkill = normalizeSkillToken(skillText);
 
         if (!normalizedSkill) {
@@ -807,7 +878,7 @@ export const toSkillDisplayLines = (skills = [], maxLines = 3) => {
                 } else {
                     const customKey = normalizeHeadingKey(heading) || 'other-skills';
                     itemActiveGroupKey = `custom:${customKey}`;
-                    itemActiveGroupHeading = toDisplayHeading(heading) || 'Other Skills';
+                    itemActiveGroupHeading = toDisplayHeading(heading) || 'Specialization';
                 }
 
                 splitSkillTokens(inlineValue).forEach((token) => {
@@ -843,33 +914,13 @@ export const toSkillDisplayLines = (skills = [], maxLines = 3) => {
         ...groupInsertionOrder.filter((groupKey) => !SKILL_CATEGORY_ORDER.includes(groupKey)),
     ];
 
-    const orderedSkills = orderedGroups
-        .flatMap((groupKey) => groups.get(groupKey).items || [])
-        .map((skill) => sanitizeSkillPreviewText(skill))
-        .filter(Boolean);
-
-    const seenSkills = new Set();
-    const primarySkills = orderedSkills.filter((skill) => {
-        const key = toCanonicalSkillKey(skill);
-        if (!key || seenSkills.has(key)) {
-            return false;
-        }
-        seenSkills.add(key);
-        return true;
-    });
-
-    const targetCount = Math.min(3, Math.max(2, Number(maxLines) || 3));
-    const previewSkills = primarySkills.slice(0, targetCount);
-    if (!previewSkills.length) {
-        return [];
-    }
-
-    return [
-        {
-            heading: '',
-            text: previewSkills.join(', '),
-        },
-    ];
+    return orderedGroups
+        .map((groupKey) => ({
+            heading: groups.get(groupKey).heading,
+            text: groups.get(groupKey).items.join(', ').trim(),
+        }))
+        .filter((line) => Boolean(line.text))
+        .slice(0, maxLines);
 };
 
 export const toSkillInlineText = (skills = [], separator = ', ', maxLines = 10) =>
