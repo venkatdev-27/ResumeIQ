@@ -47,10 +47,10 @@ const SUMMARY_FALLBACK_TOKENS = [
     'ownership',
 ];
 const DEFAULT_PROFESSIONAL_SUMMARY_LINES = [
-    'Technology professional delivering reliable software solutions through hands-on, collaborative development and improvement.',
-    'Uses modern workflows to build features, resolve issues, and improve outcomes.',
-    'Contributes across projects with documentation, testing discipline, and ownership of deliverables.',
-    'Focused on scalable architecture, maintainability, and learning aligned with long-term business goals.',
+    'Professional profile aligned to the submitted role context and form details.',
+    'Summary is generated from provided title and available experience, project, or internship entries.',
+    'Contributions emphasize accountable execution, delivery quality, and role-focused outcomes.',
+    'Prepared for targeted opportunities with structured ownership and dependable collaboration.',
 ];
 const BULLET_FALLBACK_TOKENS = [
     'using',
@@ -639,7 +639,8 @@ const fitSummaryLinesToWordRange = (lines = [], options = {}) => {
         totalWords = summaryWordCount(seeded.join(' '));
     }
 
-    const trimOrder = [3, 2, 0, 1];
+    // Preserve the closing line as much as possible so summary ends with a strong sentence.
+    const trimOrder = [0, 1, 2, 3];
     while (totalWords > maxWords) {
         const before = totalWords;
         for (const lineIndex of trimOrder) {
@@ -675,10 +676,12 @@ const fitSummaryLinesToWordRange = (lines = [], options = {}) => {
 };
 
 const buildContextDrivenSummary = (resumeData = {}) => {
-    const title = pickLabelTokens(deriveProfessionalTitle(resumeData), 2).join(' ') || 'Technology Professional';
-    const workLabel = toDisplayList(extractWorkLabels(resumeData), 1);
-    const internshipLabel = toDisplayList(extractInternshipLabels(resumeData), 1);
-    const projectLabel = toDisplayList(extractProjectLabels(resumeData), 1);
+    const title = deriveProfessionalTitle(resumeData);
+    const workLabel = toDisplayList(extractWorkLabels(resumeData), 2);
+    const internshipLabel = toDisplayList(extractInternshipLabels(resumeData), 2);
+    const projectLabel = toDisplayList(extractProjectLabels(resumeData), 2);
+    const primaryContext = resolvePrimarySummaryContext(resumeData);
+    const contextDescriptor = describeProvidedSummaryContext(resumeData);
     const hasContextData =
         Boolean(compactToOneLine(resumeData?.personalDetails?.title || '')) ||
         hasAnyText(workLabel) ||
@@ -690,22 +693,23 @@ const buildContextDrivenSummary = (resumeData = {}) => {
     }
 
     const lines = [];
-    lines.push(`${title} delivering reliable application features through structured implementation and collaborative execution.`);
-    lines.push('Core strengths include structured execution, quality delivery, and continuous improvement across responsibilities.');
+    lines.push(`${title} profile generated from submitted resume form context and role-aligned responsibilities.`);
 
-    if (workLabel) {
-        lines.push('Professional experience includes translating requirements into stable releases with documentation and testing discipline.');
-    } else if (internshipLabel) {
-        lines.push('Internship exposure includes supporting implementation cycles, testing quality, and dependable execution across delivery milestones.');
+    if (primaryContext === 'workExperience' && workLabel) {
+        lines.push(`Work experience includes ${workLabel}, with structured execution across delivery responsibilities.`);
+    } else if (primaryContext === 'internships' && internshipLabel) {
+        lines.push(`Internship context includes ${internshipLabel}, supporting dependable delivery and accountability.`);
     } else {
-        lines.push('Experience demonstrates implementation ownership, structured problem-solving, documentation quality, and measurable delivery consistency.');
+        lines.push(`Available experience details indicate role-focused contribution with measurable execution intent.`);
     }
 
-    if (projectLabel || workLabel || internshipLabel) {
-        lines.push('Delivers integration-focused enhancement with consistent delivery and measurable business outcomes.');
+    if (projectLabel) {
+        lines.push(`Project context includes ${projectLabel}, reflecting iterative enhancement and implementation ownership.`);
     } else {
-        lines.push('Delivers measurable professional impact through disciplined execution, dependable collaboration, and role-aligned business outcomes.');
+        lines.push('Project details are reflected where provided, aligned with submitted role expectations.');
     }
+
+    lines.push(`Summary content is derived strictly from ${contextDescriptor}.`);
 
     return fitSummaryLinesToWordRange(lines).join('\n');
 };
@@ -1061,6 +1065,44 @@ const extractInternshipLabels = (resumeData = {}) =>
         })
         .filter(Boolean);
 
+const resolvePrimarySummaryContext = (resumeData = {}) => {
+    const hasWorkContext = extractWorkLabels(resumeData).length > 0;
+    const hasInternshipContext = extractInternshipLabels(resumeData).length > 0;
+
+    if (hasWorkContext) {
+        return 'workExperience';
+    }
+
+    if (hasInternshipContext) {
+        return 'internships';
+    }
+
+    return '';
+};
+
+const describeProvidedSummaryContext = (resumeData = {}) => {
+    const primaryContext = resolvePrimarySummaryContext(resumeData);
+    const hasProjects = extractProjectLabels(resumeData).length > 0;
+
+    if (primaryContext === 'workExperience') {
+        return hasProjects
+            ? 'user-provided role title, work experience, and project entries'
+            : 'user-provided role title and work experience entries';
+    }
+
+    if (primaryContext === 'internships') {
+        return hasProjects
+            ? 'user-provided role title, internship entries, and project entries'
+            : 'user-provided role title and internship entries';
+    }
+
+    if (hasProjects) {
+        return 'user-provided role title and project entries';
+    }
+
+    return 'user-provided role title details';
+};
+
 const deriveProfessionalTitle = (resumeData = {}) => {
     const explicitTitle = compactToOneLine(resumeData?.personalDetails?.title || '');
     if (explicitTitle) {
@@ -1089,28 +1131,34 @@ const buildSummaryGeneratorLines = (resumeData = {}) => {
     const workLabels = extractWorkLabels(resumeData);
     const projectLabels = extractProjectLabels(resumeData);
     const internshipLabels = extractInternshipLabels(resumeData);
+    const primaryContext = resolvePrimarySummaryContext(resumeData);
+    const contextDescriptor = describeProvidedSummaryContext(resumeData);
     const workText = toDisplayList(workLabels, 2);
-    const hasProjectContext = projectLabels.length > 0;
+    const projectText = toDisplayList(projectLabels, 2);
+    const hasProjectContext = Boolean(projectText);
     const internshipText = toDisplayList(internshipLabels, 2);
 
     const generated = [];
 
-    generated.push(`${title} delivering reliable application features through structured implementation and collaborative execution.`);
-    generated.push('Core strengths include structured execution, quality delivery, and continuous improvement across responsibilities.');
+    generated.push(`${title} profile aligned to submitted form context and role-focused responsibilities.`);
 
-    if (workText) {
-        generated.push('Professional experience includes translating requirements into stable releases with documentation and testing discipline.');
-    } else if (internshipText) {
-        generated.push('Internship experience includes supporting implementation cycles, testing quality, and dependable execution across delivery milestones.');
+    if (primaryContext === 'workExperience' && workText) {
+        generated.push(`Work experience includes ${workText}, with structured execution and delivery accountability.`);
+    } else if (primaryContext === 'internships' && internshipText) {
+        generated.push(`Internship context includes ${internshipText}, supporting dependable execution across assigned milestones.`);
     } else if (hasProjectContext) {
-        generated.push('Project experience includes translating requirements into stable releases with structured implementation and quality-focused execution.');
+        generated.push(`Project experience includes ${projectText}, reflecting implementation ownership and iterative enhancement.`);
     }
 
-    if (hasProjectContext || workText || internshipText) {
-        generated.push('Delivers integration-focused enhancement with consistent delivery and measurable business outcomes.');
+    if (projectText) {
+        generated.push(`Projects include ${projectText}, contributing to role-aligned implementation and integration outcomes.`);
+    } else if (hasProjectContext || workText || internshipText) {
+        generated.push('Provided context indicates measurable contribution through accountable delivery and role alignment.');
     } else {
-        generated.push('Delivers measurable professional impact through disciplined execution, dependable collaboration, and role-aligned business outcomes.');
+        generated.push('Provided details indicate professional intent through disciplined execution and dependable collaboration.');
     }
+
+    generated.push(`Summary wording is generated from ${contextDescriptor}.`);
 
     return dedupeLines(generated.map((line) => ensureSentenceEnding(line)).filter(Boolean));
 };
@@ -1874,7 +1922,19 @@ const normalizeLivePreviewSummary = (value = '', resumeData = {}) => {
         return '';
     }
 
-    return normalizeSummary(normalized, resumeData);
+    const summary = normalizeSummary(normalized, resumeData);
+    const primaryContext = resolvePrimarySummaryContext(resumeData);
+    const summaryText = compactToOneLine(summary).toLowerCase();
+
+    if (primaryContext === 'workExperience' && /\bintern(ship|ships?)\b/.test(summaryText)) {
+        return buildContextDrivenSummary(resumeData);
+    }
+
+    if (primaryContext === 'internships' && /\b(work experience|professional experience|employment)\b/.test(summaryText)) {
+        return buildContextDrivenSummary(resumeData);
+    }
+
+    return summary;
 };
 
 const buildLivePreviewSummaryFallback = (resumeData = {}) => {
@@ -1901,6 +1961,7 @@ const buildSummaryPreviewResponse = (summary = '') => ({
 
 const buildLivePreviewSummaryPrompt = ({ resumeData }) => {
     const targetRole = deriveProfessionalTitle(resumeData) || compactToOneLine(resumeData?.personalDetails?.title || '') || 'Not specified';
+    const primaryContext = resolvePrimarySummaryContext(resumeData);
     const resumeDataPreview = toSafeAiJson(resumeData, 10_000);
 
     return `You are an elite ATS resume strategist writing a professional summary for resume builder live preview.
@@ -1914,9 +1975,12 @@ SUMMARY RULES (STRICT):
 6. Keep tone concise, modern, and role-focused.
 7. Each line must be compact for single-line A4 rendering.
 8. End with a complete, grammatically strong professional sentence.
-
-Example style:
-"Results-driven Software Developer delivering reliable application features through structured implementation and collaborative execution. Experience includes translating requirements into stable releases with strong documentation and testing discipline. Contributes to integration and iterative enhancement across development cycles while ensuring maintainable architecture and consistent delivery aligned with business outcomes."
+9. Use only facts from the provided resumeData form fields.
+10. Do not reuse canned templates, sample sentences, or fixed phrases.
+11. Context priority rule:
+   - If workExperience has data, use work experience context and do not mention internship.
+   - If workExperience is empty and internships has data, use internship context and do not mention work experience.
+   - If both are empty, do not force either context.
 
 OUTPUT RULES:
 1. Return valid JSON only.
@@ -1927,6 +1991,7 @@ OUTPUT RULES:
 
 Input:
 targetRole: ${targetRole}
+primaryContext: ${primaryContext || 'none'}
 resumeData: ${resumeDataPreview}`;
 };
 
@@ -1980,9 +2045,8 @@ SUMMARY RULES (STRICT):
 6. Keep tone concise, modern, and role-focused.
 7. Each line must be compact for single-line A4 rendering.
 8. End with a complete, grammatically strong professional sentence.
-
-SUMMARY EXAMPLE (STYLE REFERENCE):
-"Results-driven Software Developer delivering reliable application features through structured implementation and collaborative execution. Experience includes translating requirements into stable releases with strong documentation and testing discipline. Contributes to integration and iterative enhancement across development cycles while ensuring maintainable architecture and consistent delivery aligned with business outcomes."
+9. Use only facts from provided resumeData fields.
+10. Do not reuse canned templates, sample sentences, or fixed phrases.
 
 BULLET RULES (STRICT):
 1. For each work experience, project, and internship item return exactly 3 bullets.
@@ -1998,7 +2062,7 @@ SKILLS RULES:
 3. Normalize names: React => ReactJS, Node => NodeJS, Mongo => MongoDB, JS => JavaScript.
 
 ACHIEVEMENTS / CERTIFICATIONS / HOBBIES:
-1. Keep each item to one clean professional line.
+1. Keep each item to one clean professional line with 4 or 5 words.
 
 ADDITIONAL RULES:
 1. If an input section is empty, return an empty array for that section.
