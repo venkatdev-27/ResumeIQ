@@ -56,6 +56,10 @@ const resumeUploadSchema = Joi.object({
 const atsRequestSchema = Joi.object({
     resumeText: Joi.string().trim().min(20).optional(),
     jobDescription: Joi.string().trim().allow('').optional(),
+    userSkills: Joi.alternatives().try(
+        Joi.string().allow(''),
+        Joi.array().items(Joi.string()),
+    ).optional(),
     resumeId: Joi.string().trim().length(24).hex().optional(),
 }).or('resumeText', 'resumeId');
 
