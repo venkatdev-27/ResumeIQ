@@ -77,7 +77,7 @@ function TemplateNine({ resumeData, formData }) {
                     {data.personalDetails.summary ? (
                         <section className="min-w-0 space-y-1">
                             <h2 className="border-b border-gray-300 pb-0.5 text-xs font-bold uppercase tracking-wide">Profile</h2>
-                            <p className="whitespace-pre-line text-sm">{data.personalDetails.summary}</p>
+                            <p className="resume-summary-paragraph text-sm">{data.personalDetails.summary}</p>
                         </section>
                     ) : null}
 
@@ -93,7 +93,7 @@ function TemplateNine({ resumeData, formData }) {
                                         <p className="shrink-0 whitespace-nowrap text-right text-xs empty:hidden">{formatDateRange(item.startDate, item.endDate)}</p>
                                     </div>
                                     <ul className="list-disc space-y-1 pl-4 text-sm marker:text-[0.72em] marker:text-black">
-                                        {toBullets(item.description).map((line, lineIndex) => (
+                                        {toBullets(item.description, [], { maxLines: item.bulletMaxLines || 3 }).map((line, lineIndex) => (
                                             <li key={`${item.company}-${lineIndex}`} className="break-words">{line}</li>
                                         ))}
                                     </ul>
@@ -112,7 +112,7 @@ function TemplateNine({ resumeData, formData }) {
                                     </p>
                                     <p className="break-all text-xs">{item.link}</p>
                                     <ul className="list-disc space-y-1 pl-4 text-sm marker:text-[0.72em] marker:text-black">
-                                        {toBullets(item.description).map((line, lineIndex) => (
+                                        {toBullets(item.description, [], { maxLines: item.bulletMaxLines || 3 }).map((line, lineIndex) => (
                                             <li key={`${item.name}-${lineIndex}`} className="break-words">{line}</li>
                                         ))}
                                     </ul>
@@ -149,6 +149,7 @@ function TemplateNine({ resumeData, formData }) {
 }
 
 export default React.memo(TemplateNine);
+
 
 
 
