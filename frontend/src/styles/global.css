@@ -85,6 +85,13 @@ h6 {
     .font-ui-body {
         font-family: var(--font-body);
     }
+
+    .resume-summary-paragraph {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 4;
+    }
 }
 
 @layer components {
