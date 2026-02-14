@@ -1,78 +1,129 @@
 const fs = require('fs/promises');
+const axios = require('axios');
+const mongoose = require('mongoose');
+const { Readable } = require('stream');
+const { pipeline } = require('stream/promises');
+
 const cloudinary = require('../config/cloudinary');
 const Resume = require('../models/Resume.model');
 const { extractTextFromPdfFile, generatePdfFromHtml } = require('../services/pdfGenerate.service');
 const { AppError, asyncHandler, sendSuccess } = require('../utils/response');
 
+const requireAuthenticatedUserId = (req) => {
+    const userId = req.user?._id;
+    if (!userId) {
+        throw new AppError('Unauthorized user context.', 401);
+    }
+    return userId;
+};
+
+const sanitizeFilename = (value = '') => {
+    const normalized = String(value || 'resume')
+        .replace(/\.pdf$/i, '')
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 80);
+
+    const safeBase = normalized || 'resume';
+    return `${safeBase}.pdf`;
+};
+
+const buildContentDisposition = (fileName) => {
+    const asciiName = String(fileName || 'resume.pdf')
+        .replace(/[^\x20-\x7E]/g, '_')
+        .replace(/["\\]/g, '_');
+    const encodedName = encodeURIComponent(fileName || 'resume.pdf');
+
+    return `attachment; filename="${asciiName}"; filename*=UTF-8''${encodedName}`;
+};
+
+const setPdfHeaders = (res, fileName, contentLength) => {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', buildContentDisposition(fileName));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    if (Number.isFinite(contentLength) && contentLength > 0) {
+        res.setHeader('Content-Length', String(contentLength));
+    }
+};
+
 const parseResumeData = (value) => {
-    if (!value) {
+    if (value === undefined || value === null || value === '') {
         return null;
     }
 
-    if (typeof value === 'object') {
+    if (typeof value === 'object' && !Array.isArray(value)) {
         return value;
     }
 
     if (typeof value === 'string') {
         try {
-            return JSON.parse(value);
+            const parsed = JSON.parse(value);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                throw new AppError('Invalid resumeData JSON payload.', 400);
+            }
+            return parsed;
         } catch (_error) {
             throw new AppError('Invalid resumeData JSON payload.', 400);
         }
     }
 
-    return null;
+    throw new AppError('Invalid resumeData payload.', 400);
 };
 
-const buildResumeTextFromData = (resumeData = {}) => {
-    const personal = resumeData.personalDetails || {};
+const toArray = (value) => (Array.isArray(value) ? value : []);
 
-    const listToText = (list = [], mapFn) =>
-        list
-            .map((item, index) => {
-                const value = mapFn(item, index);
-                return value ? String(value).trim() : '';
-            })
+const toText = (value) => String(value || '').trim();
+
+const buildResumeTextFromData = (resumeData = {}) => {
+    const personal = resumeData?.personalDetails || {};
+
+    const appendIfText = (label, value) => {
+        const text = toText(value);
+        return text ? `${label}: ${text}` : '';
+    };
+
+    const listToText = (list, mapFn) =>
+        toArray(list)
+            .map((item, index) => toText(mapFn(item || {}, index)))
             .filter(Boolean)
             .join('\n');
 
     const sections = [
-        `Name: ${personal.fullName || ''}`.trim(),
-        `Title: ${personal.title || ''}`.trim(),
-        `Email: ${personal.email || ''}`.trim(),
-        `Phone: ${personal.phone || ''}`.trim(),
-        `Location: ${personal.location || ''}`.trim(),
-        `Summary: ${personal.summary || ''}`.trim(),
-        `Skills: ${(resumeData.skills || []).join(', ')}`.trim(),
-        `Certifications: ${(resumeData.certifications || []).join(', ')}`.trim(),
-        `Achievements: ${(resumeData.achievements || []).join(', ')}`.trim(),
-        `Hobbies: ${(resumeData.hobbies || []).join(', ')}`.trim(),
+        appendIfText('Name', personal.fullName),
+        appendIfText('Title', personal.title),
+        appendIfText('Email', personal.email),
+        appendIfText('Phone', personal.phone),
+        appendIfText('Location', personal.location),
+        appendIfText('Summary', personal.summary),
+        appendIfText('Skills', toArray(resumeData.skills).join(', ')),
+        appendIfText('Certifications', toArray(resumeData.certifications).join(', ')),
+        appendIfText('Achievements', toArray(resumeData.achievements).join(', ')),
+        appendIfText('Hobbies', toArray(resumeData.hobbies).join(', ')),
         listToText(resumeData.workExperience, (item) => `${item.role || ''} ${item.company || ''} ${item.description || ''}`),
         listToText(resumeData.projects, (item) => `${item.name || ''} ${item.techStack || ''} ${item.description || ''}`),
         listToText(resumeData.internships, (item) => `${item.role || ''} ${item.company || ''} ${item.description || ''}`),
         listToText(resumeData.education, (item) => `${item.degree || ''} ${item.institution || ''} ${item.description || ''}`),
     ];
 
-    return sections
-        .filter(Boolean)
-        .filter((line) => !line.endsWith(':'))
-        .join('\n');
+    return sections.filter(Boolean).join('\n').trim();
 };
 
-const toDownloadFilename = (value = '') => {
-    const normalized = String(value || 'resume')
-        .replace(/[^a-zA-Z0-9_-]/g, '_')
-        .trim();
+const requireCloudinaryEnv = () => {
+    const required = ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];
+    const missing = required.filter((key) => !process.env[key]);
 
-    const safeBase = normalized || 'resume';
-    return safeBase.toLowerCase().endsWith('.pdf') ? safeBase : `${safeBase}.pdf`;
+    if (missing.length) {
+        throw new AppError(`Cloudinary credentials are not configured: ${missing.join(', ')}`, 500);
+    }
 };
 
 const uploadResume = asyncHandler(async (req, res) => {
+    const userId = requireAuthenticatedUserId(req);
     const uploadedFile = req.file;
-    const parsedResumeData = parseResumeData(req.body.resumeData);
-    const templateName = req.body.templateName || 'template1';
-    const resumeTextFromBody = req.body.resumeText || '';
+    const parsedResumeData = parseResumeData(req.body?.resumeData);
+    const templateName = toText(req.body?.templateName) || 'template1';
+    const resumeTextFromBody = toText(req.body?.resumeText);
 
     if (!uploadedFile?.path && !parsedResumeData) {
         throw new AppError('Provide either a resume PDF file or resumeData payload.', 400);
@@ -80,10 +131,10 @@ const uploadResume = asyncHandler(async (req, res) => {
 
     if (!uploadedFile?.path) {
         const resume = await Resume.create({
-            user: req.user._id,
+            user: userId,
             templateName,
-            resumeData: parsedResumeData,
-            text: resumeTextFromBody || buildResumeTextFromData(parsedResumeData),
+            resumeData: parsedResumeData || undefined,
+            text: resumeTextFromBody || buildResumeTextFromData(parsedResumeData || {}),
         });
 
         return sendSuccess(
@@ -100,36 +151,44 @@ const uploadResume = asyncHandler(async (req, res) => {
         );
     }
 
-    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
-        throw new AppError('Cloudinary credentials are not configured.', 500);
-    }
+    requireCloudinaryEnv();
 
     let extractedText = '';
 
     try {
-        extractedText = await extractTextFromPdfFile(uploadedFile.path);
+        try {
+            extractedText = await extractTextFromPdfFile(uploadedFile.path);
+        } catch (_error) {
+            throw new AppError('Uploaded PDF could not be processed.', 400);
+        }
 
-        const cloudinaryResult = await cloudinary.uploader.upload(uploadedFile.path, {
-            resource_type: 'raw',
-            folder: process.env.CLOUDINARY_RESUME_FOLDER || 'ai-resume-scanner/resumes',
-            use_filename: true,
-            unique_filename: true,
-            overwrite: false,
-            format: 'pdf',
-        });
+        let cloudinaryResult;
+        try {
+            cloudinaryResult = await cloudinary.uploader.upload(uploadedFile.path, {
+                resource_type: 'raw',
+                folder: process.env.CLOUDINARY_RESUME_FOLDER || 'ai-resume-scanner/resumes',
+                use_filename: true,
+                unique_filename: true,
+                overwrite: false,
+                format: 'pdf',
+                timeout: 60_000,
+            });
+        } catch (_error) {
+            throw new AppError('Cloudinary upload failed.', 502);
+        }
 
         if (!cloudinaryResult?.secure_url) {
             throw new AppError('Cloudinary upload failed to return a secure URL.', 502);
         }
 
         const resume = await Resume.create({
-            user: req.user._id,
+            user: userId,
             templateName,
             resumeData: parsedResumeData || undefined,
-            fileName: uploadedFile.originalname,
-            mimeType: uploadedFile.mimetype,
-            size: uploadedFile.size,
-            text: resumeTextFromBody || extractedText,
+            fileName: sanitizeFilename(uploadedFile.originalname || 'resume.pdf'),
+            mimeType: uploadedFile.mimetype || 'application/pdf',
+            size: uploadedFile.size || 0,
+            text: resumeTextFromBody || extractedText || buildResumeTextFromData(parsedResumeData || {}),
             cloudinaryUrl: cloudinaryResult.secure_url,
         });
 
@@ -150,149 +209,171 @@ const uploadResume = asyncHandler(async (req, res) => {
             201,
         );
     } finally {
-        await fs.unlink(uploadedFile.path).catch(() => {});
+        if (uploadedFile?.path) {
+            await fs.unlink(uploadedFile.path).catch(() => {});
+        }
     }
 });
 
 const generateResumePdf = asyncHandler(async (req, res) => {
-    const html = typeof req.body?.html === 'string' ? req.body.html : '';
-    const fileName = toDownloadFilename(req.body?.fileName || 'resume.pdf');
+    const html = toText(req.body?.html);
+    const fileName = sanitizeFilename(req.body?.fileName || 'resume.pdf');
 
-    if (!html.trim()) {
+    if (!html) {
         throw new AppError('HTML content is required.', 400);
     }
 
     const pdfBuffer = await generatePdfFromHtml(html);
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-    res.status(200).send(pdfBuffer);
+    setPdfHeaders(res, fileName, pdfBuffer.length);
+    res.status(200);
+    return pipeline(Readable.from(pdfBuffer), res);
 });
 
-// NEW: Download existing resume by ID
+const escapeHtml = (value = '') =>
+    String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+const renderListItems = (items = []) =>
+    toArray(items)
+        .map((item) => `<li>${escapeHtml(item)}</li>`)
+        .join('');
+
+const renderExperienceBlocks = (items = []) =>
+    toArray(items)
+        .map((item) => {
+            const role = escapeHtml(item?.role || '');
+            const company = escapeHtml(item?.company || '');
+            const description = escapeHtml(item?.description || '');
+            return `<div class="block"><h4>${role}${role && company ? ' - ' : ''}${company}</h4><p>${description}</p></div>`;
+        })
+        .join('');
+
+const renderProjectBlocks = (items = []) =>
+    toArray(items)
+        .map((item) => {
+            const name = escapeHtml(item?.name || item?.title || '');
+            const techStack = escapeHtml(item?.techStack || '');
+            const description = escapeHtml(item?.description || '');
+            return `<div class="block"><h4>${name}</h4><p>${techStack}</p><p>${description}</p></div>`;
+        })
+        .join('');
+
+const renderEducationBlocks = (items = []) =>
+    toArray(items)
+        .map((item) => {
+            const degree = escapeHtml(item?.degree || '');
+            const institution = escapeHtml(item?.institution || '');
+            const description = escapeHtml(item?.description || '');
+            return `<div class="block"><h4>${degree}${degree && institution ? ' - ' : ''}${institution}</h4><p>${description}</p></div>`;
+        })
+        .join('');
+
+const generateHtmlFromResumeData = (resumeData = {}, templateName = 'template1') => {
+    const personal = resumeData?.personalDetails || {};
+    const fullName = escapeHtml(personal.fullName || '');
+    const title = escapeHtml(personal.title || '');
+    const email = escapeHtml(personal.email || '');
+    const phone = escapeHtml(personal.phone || '');
+    const location = escapeHtml(personal.location || '');
+    const summary = escapeHtml(personal.summary || '');
+
+    return `
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body { font-family: Arial, sans-serif; margin: 32px; color: #1e1e1e; line-height: 1.5; }
+      h1, h2, h3, h4 { margin: 0; }
+      h1 { font-size: 28px; margin-bottom: 6px; }
+      h2 { font-size: 16px; margin-top: 18px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+      p { margin: 4px 0; white-space: pre-wrap; word-break: break-word; }
+      ul { margin: 4px 0 0 18px; padding: 0; }
+      .meta { color: #555; margin-bottom: 10px; }
+      .block { margin-bottom: 10px; }
+      .template { font-size: 11px; color: #777; margin-top: 20px; }
+    </style>
+  </head>
+  <body>
+    <h1>${fullName}</h1>
+    <h3>${title}</h3>
+    <p class="meta">${email}${email && phone ? ' | ' : ''}${phone}${(email || phone) && location ? ' | ' : ''}${location}</p>
+    <h2>Summary</h2>
+    <p>${summary}</p>
+    <h2>Skills</h2>
+    <ul>${renderListItems(resumeData.skills)}</ul>
+    <h2>Work Experience</h2>
+    ${renderExperienceBlocks(resumeData.workExperience)}
+    <h2>Projects</h2>
+    ${renderProjectBlocks(resumeData.projects)}
+    <h2>Education</h2>
+    ${renderEducationBlocks(resumeData.education)}
+    <p class="template">Template: ${escapeHtml(templateName || 'template1')}</p>
+  </body>
+</html>`;
+};
+
+const streamCloudinaryFileToResponse = async ({ url, res, fileName }) => {
+    const response = await axios.get(url, {
+        responseType: 'stream',
+        timeout: 60_000,
+        maxRedirects: 5,
+        validateStatus: (status) => status >= 200 && status < 400,
+    });
+
+    const contentLength = Number(response.headers?.['content-length'] || 0);
+    setPdfHeaders(res, fileName, contentLength);
+    res.status(200);
+    await pipeline(response.data, res);
+};
+
 const downloadResume = asyncHandler(async (req, res) => {
+    const userId = requireAuthenticatedUserId(req);
     const { id: resumeId } = req.params;
 
-    // Find the resume by ID and ensure it belongs to the authenticated user
+    if (!mongoose.Types.ObjectId.isValid(resumeId)) {
+        throw new AppError('Invalid resume ID.', 400);
+    }
+
     const resume = await Resume.findOne({
         _id: resumeId,
-        user: req.user._id
-    });
+        user: userId,
+    }).lean();
 
     if (!resume) {
         throw new AppError('Resume not found or access denied.', 404);
     }
 
-    // If the resume has a cloudinary URL, redirect to it
+    const fileName = sanitizeFilename(resume.fileName || `${resume.templateName || 'resume'}.pdf`);
+
     if (resume.cloudinaryUrl) {
-        // Set headers for direct download
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="${resume.fileName || 'resume.pdf'}"`);
-        
-        // For mobile compatibility, we'll stream the file instead of redirecting
         try {
-            const response = await fetch(resume.cloudinaryUrl);
-            if (!response.ok) {
-                throw new AppError('Failed to fetch resume from storage.', 502);
-            }
-            
-            // Stream the file directly to the client
-            response.body.pipe(res);
-        } catch (error) {
-            throw new AppError('Failed to download resume. Please try again.', 500);
+            await streamCloudinaryFileToResponse({
+                url: resume.cloudinaryUrl,
+                res,
+                fileName,
+            });
+            return;
+        } catch (_error) {
+            throw new AppError('Failed to download resume from storage.', 502);
         }
-        return;
     }
 
-    // If no cloudinary URL, generate PDF from stored data
-    if (!resume.resumeData) {
+    if (!resume.resumeData || typeof resume.resumeData !== 'object') {
         throw new AppError('Resume data not available for download.', 400);
     }
 
-    // Generate HTML from resume data (you'll need to implement this based on your template system)
     const html = generateHtmlFromResumeData(resume.resumeData, resume.templateName);
     const pdfBuffer = await generatePdfFromHtml(html);
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${resume.fileName || 'resume.pdf'}"`);
-    res.status(200).send(pdfBuffer);
+    setPdfHeaders(res, fileName, pdfBuffer.length);
+    res.status(200);
+    await pipeline(Readable.from(pdfBuffer), res);
 });
-
-// Helper function to generate HTML from resume data
-const generateHtmlFromResumeData = (resumeData, templateName) => {
-    // This is a simplified example - you should implement this based on your actual template system
-    const template = getTemplateHtml(templateName);
-    
-    // Replace placeholders with actual data
-    let html = template;
-    
-    // Replace basic placeholders
-    html = html.replace('{{fullName}}', resumeData.personalDetails?.fullName || '');
-    html = html.replace('{{title}}', resumeData.personalDetails?.title || '');
-    html = html.replace('{{email}}', resumeData.personalDetails?.email || '');
-    html = html.replace('{{phone}}', resumeData.personalDetails?.phone || '');
-    html = html.replace('{{location}}', resumeData.personalDetails?.location || '');
-    html = html.replace('{{summary}}', resumeData.personalDetails?.summary || '');
-    
-    // Add skills
-    const skillsHtml = (resumeData.skills || []).map(skill => `<li>${skill}</li>`).join('');
-    html = html.replace('{{skills}}', skillsHtml);
-    
-    // Add work experience
-    const workHtml = (resumeData.workExperience || []).map(exp => `
-        <div>
-            <h4>${exp.role || ''} at ${exp.company || ''}</h4>
-            <p>${exp.description || ''}</p>
-        </div>
-    `).join('');
-    html = html.replace('{{workExperience}}', workHtml);
-    
-    // Add education
-    const eduHtml = (resumeData.education || []).map(edu => `
-        <div>
-            <h4>${edu.degree || ''} - ${edu.institution || ''}</h4>
-            <p>${edu.description || ''}</p>
-        </div>
-    `).join('');
-    html = html.replace('{{education}}', eduHtml);
-    
-    return html;
-};
-
-// Helper function to get template HTML (simplified)
-const getTemplateHtml = (templateName) => {
-    // This should return the actual HTML template based on the template name
-    // For now, returning a basic template
-    return `
-        <!doctype html>
-        <html>
-        <head>
-            <meta charset="UTF-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <style>
-                body { font-family: Arial, sans-serif; margin: 40px; }
-                h1 { color: #333; }
-                h2 { color: #666; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
-                ul { list-style-type: none; padding: 0; }
-                li { margin: 5px 0; }
-            </style>
-        </head>
-        <body>
-            <h1>{{fullName}}</h1>
-            <h2>{{title}}</h2>
-            <p>{{email}} | {{phone}} | {{location}}</p>
-            <h2>Summary</h2>
-            <p>{{summary}}</p>
-            <h2>Skills</h2>
-            <ul>{{skills}}</ul>
-            <h2>Work Experience</h2>
-            {{workExperience}}
-            <h2>Education</h2>
-            {{education}}
-        </body>
-        </html>
-    `;
-};
 
 module.exports = {
     uploadResume,
