@@ -51,6 +51,23 @@ function TemplatePreviewModal({
         }
     }, [open, template?.id]);
 
+    useEffect(() => {
+        if (!open) {
+            return undefined;
+        }
+
+        const originalHtmlOverflow = document.documentElement.style.overflow;
+        const originalBodyOverflow = document.body.style.overflow;
+
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.overflow = 'hidden';
+
+        return () => {
+            document.documentElement.style.overflow = originalHtmlOverflow;
+            document.body.style.overflow = originalBodyOverflow;
+        };
+    }, [open]);
+
     if (!open || !template) {
         return null;
     }
