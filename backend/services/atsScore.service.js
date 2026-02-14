@@ -24,6 +24,250 @@ const WEAK_TECHNICAL_OCCURRENCE_THRESHOLD = 1;
 const WEAK_VOCAB_OCCURRENCE_THRESHOLD = 0;
 
 const ensureObject = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+const escapeRegExp = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const normalizeRoleAlias = (value = '') =>
+    String(value || '')
+        .toLowerCase()
+        .replace(/[._/\\-]+/g, ' ')
+        .replace(/[^a-z0-9+\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+const buildRoleSkillSearchText = (value = '') =>
+    buildSearchText(
+        String(value || '')
+            .replace(/c\#/gi, ' csharp ')
+            .replace(/c\+\+/gi, ' cpp ')
+            .replace(/asp\.net/gi, ' asp net ')
+            .replace(/ci\/cd/gi, ' ci cd '),
+    );
+
+const normalizeRoleSkillTerm = (value = '') => {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) {
+        return '';
+    }
+
+    if (raw === 'c#' || raw === 'c sharp') {
+        return 'csharp';
+    }
+
+    if (raw === 'c++') {
+        return 'cpp';
+    }
+
+    const normalized = normalizeKeywordTerm(raw);
+    if (!normalized) {
+        return normalizeRoleAlias(raw);
+    }
+
+    return normalized === 'c' && raw.includes('c#') ? 'csharp' : normalized;
+};
+
+const toRoleSkillList = (csvSkills = '') => {
+    const seen = new Set();
+    return String(csvSkills || '')
+        .split(',')
+        .map((item) => normalizeRoleSkillTerm(item))
+        .filter((item) => {
+            if (!item || seen.has(item)) {
+                return false;
+            }
+            seen.add(item);
+            return true;
+        });
+};
+
+const buildRoleProfile = ({ id, name, aliases = [], skills = '' }) => ({
+    id,
+    name,
+    aliases: [...new Set([name, ...(Array.isArray(aliases) ? aliases : [])].map((alias) => normalizeRoleAlias(alias)).filter(Boolean))],
+    skills: toRoleSkillList(skills),
+});
+
+const ROLE_SKILL_PROFILES = Object.freeze([
+    buildRoleProfile({
+        id: 'mern_full_stack',
+        name: 'MERN Full Stack',
+        aliases: ['mern stack', 'mern developer'],
+        skills: 'react, nodejs, express, mongodb, redux, javascript, typescript, rest api, jwt, tailwind css',
+    }),
+    buildRoleProfile({
+        id: 'mean_stack',
+        name: 'MEAN Stack',
+        aliases: ['mean developer'],
+        skills: 'angular, nodejs, express, mongodb, typescript, rxjs, ngrx, rest api, jwt, bootstrap',
+    }),
+    buildRoleProfile({
+        id: 'java_full_stack',
+        name: 'Java Full Stack',
+        aliases: ['java fullstack'],
+        skills: 'java, spring boot, spring mvc, hibernate, mysql, sql, rest api, angular, maven, microservices',
+    }),
+    buildRoleProfile({
+        id: 'python_full_stack',
+        name: 'Python Full Stack',
+        aliases: ['python fullstack'],
+        skills: 'python, django, flask, postgresql, mysql, react, rest api, docker, nginx, jwt',
+    }),
+    buildRoleProfile({
+        id: 'dotnet_full_stack',
+        name: '.NET Full Stack',
+        aliases: ['dotnet full stack', 'asp net full stack'],
+        skills: 'c#, asp.net core, web api, entity framework, sql server, angular, azure, linq, microservices, docker',
+    }),
+    buildRoleProfile({
+        id: 'frontend_developer',
+        name: 'Frontend Developer',
+        aliases: ['front end developer', 'frontend engineer'],
+        skills: 'html, css, javascript, typescript, react, nextjs, redux, tailwind css, bootstrap, webpack',
+    }),
+    buildRoleProfile({
+        id: 'backend_java',
+        name: 'Backend Developer (Java)',
+        aliases: ['java backend developer', 'backend java developer'],
+        skills: 'java, spring boot, hibernate, mysql, postgresql, rest api, microservices, maven, redis, kafka',
+    }),
+    buildRoleProfile({
+        id: 'backend_nodejs',
+        name: 'Backend Developer (Node.js)',
+        aliases: ['nodejs backend developer', 'backend node developer', 'node backend developer'],
+        skills: 'nodejs, express, mongodb, mysql, rest api, jwt, redis, docker, microservices, socket io',
+    }),
+    buildRoleProfile({
+        id: 'backend_python',
+        name: 'Backend Developer (Python)',
+        aliases: ['python backend developer', 'backend python developer'],
+        skills: 'python, django, flask, fastapi, postgresql, mysql, rest api, celery, redis, docker',
+    }),
+    buildRoleProfile({
+        id: 'android_developer',
+        name: 'Android Developer',
+        aliases: ['android engineer'],
+        skills: 'java, kotlin, android sdk, xml, firebase, room database, mvvm, retrofit, jetpack compose, material ui',
+    }),
+    buildRoleProfile({
+        id: 'ios_developer',
+        name: 'iOS Developer',
+        aliases: ['ios engineer', 'swift developer'],
+        skills: 'swift, swiftui, uikit, xcode, core data, rest api, mvc, mvvm, firebase, cocoapods',
+    }),
+    buildRoleProfile({
+        id: 'devops_engineer',
+        name: 'DevOps Engineer',
+        aliases: ['devops'],
+        skills: 'docker, kubernetes, jenkins, github actions, aws, terraform, ansible, prometheus, grafana, linux',
+    }),
+    buildRoleProfile({
+        id: 'cloud_engineer',
+        name: 'Cloud Engineer',
+        aliases: ['cloud architect', 'cloud developer'],
+        skills: 'aws, ec2, s3, rds, lambda, cloudwatch, vpc, iam, api gateway, autoscaling',
+    }),
+    buildRoleProfile({
+        id: 'data_analyst',
+        name: 'Data Analyst',
+        aliases: ['business analyst data'],
+        skills: 'python, pandas, numpy, sql, power bi, tableau, excel, matplotlib, seaborn, statistics',
+    }),
+    buildRoleProfile({
+        id: 'data_scientist',
+        name: 'Data Scientist',
+        aliases: ['datascientist'],
+        skills: 'python, numpy, pandas, scikit-learn, tensorflow, pytorch, matplotlib, seaborn, nlp, machine learning',
+    }),
+    buildRoleProfile({
+        id: 'ml_engineer',
+        name: 'Machine Learning Engineer',
+        aliases: ['machine learning developer', 'ml engineer'],
+        skills: 'python, scikit-learn, tensorflow, pytorch, mlflow, docker, kubernetes, feature engineering, model deployment, fastapi',
+    }),
+    buildRoleProfile({
+        id: 'ai_engineer',
+        name: 'AI Engineer',
+        aliases: ['artificial intelligence engineer', 'llm engineer'],
+        skills: 'python, transformers, nlp, langchain, tensorflow, pytorch, vector database, llm, rag, prompt engineering',
+    }),
+    buildRoleProfile({
+        id: 'cybersecurity_analyst',
+        name: 'Cybersecurity Analyst',
+        aliases: ['security analyst', 'cyber security analyst'],
+        skills: 'network security, kali linux, wireshark, metasploit, burp suite, siem, penetration testing, vulnerability assessment, owasp, nmap',
+    }),
+    buildRoleProfile({
+        id: 'qa_automation_tester',
+        name: 'QA Automation Tester',
+        aliases: ['automation tester', 'sdet'],
+        skills: 'java, selenium, testng, cucumber, maven, junit, rest assured, pom, jenkins, git',
+    }),
+    buildRoleProfile({
+        id: 'manual_tester',
+        name: 'Manual Tester',
+        aliases: ['qa tester', 'manual qa'],
+        skills: 'test cases, test planning, jira, bug tracking, regression testing, smoke testing, sanity testing, stlc, defect lifecycle, test scenarios',
+    }),
+    buildRoleProfile({
+        id: 'salesforce_developer',
+        name: 'Salesforce Developer',
+        aliases: ['salesforce engineer'],
+        skills: 'apex, visualforce, lightning, soql, sosl, lwc, triggers, salesforce cli, rest api, deployment',
+    }),
+    buildRoleProfile({
+        id: 'sap_abap_developer',
+        name: 'SAP ABAP Developer',
+        aliases: ['abap developer', 'sap developer'],
+        skills: 'abap, sap hana, cds views, odata, bapi, smartforms, adobe forms, module pool, data dictionary, alv reports',
+    }),
+    buildRoleProfile({
+        id: 'flutter_developer',
+        name: 'Flutter Developer',
+        aliases: ['flutter engineer'],
+        skills: 'dart, flutter, firebase, rest api, provider, bloc, material ui, sqlite, push notifications, mvvm',
+    }),
+    buildRoleProfile({
+        id: 'react_native_developer',
+        name: 'React Native Developer',
+        aliases: ['react native engineer'],
+        skills: 'react native, javascript, redux, firebase, rest api, async storage, navigation, expo, axios, native modules',
+    }),
+    buildRoleProfile({
+        id: 'blockchain_developer',
+        name: 'Blockchain Developer',
+        aliases: ['web3 developer'],
+        skills: 'solidity, ethereum, web3js, smart contracts, hardhat, truffle, metamask, ipfs, ganache, openzeppelin',
+    }),
+    buildRoleProfile({
+        id: 'uiux_designer',
+        name: 'UI/UX Designer',
+        aliases: ['ui designer', 'ux designer', 'product designer'],
+        skills: 'figma, adobe xd, wireframing, prototyping, user research, usability testing, interaction design, design systems, responsive design, typography',
+    }),
+    buildRoleProfile({
+        id: 'system_administrator',
+        name: 'System Administrator',
+        aliases: ['sysadmin'],
+        skills: 'linux, shell scripting, nginx, apache, docker, cron jobs, monitoring, user management, backup, networking',
+    }),
+    buildRoleProfile({
+        id: 'site_reliability_engineer',
+        name: 'Site Reliability Engineer',
+        aliases: ['sre'],
+        skills: 'golang, kubernetes, prometheus, grafana, aws, terraform, ci cd, incident management, slos, monitoring',
+    }),
+    buildRoleProfile({
+        id: 'embedded_engineer',
+        name: 'Embedded Engineer',
+        aliases: ['embedded developer'],
+        skills: 'c, c++, microcontrollers, rtos, spi, i2c, uart, embedded linux, arm, device drivers',
+    }),
+    buildRoleProfile({
+        id: 'game_developer',
+        name: 'Game Developer',
+        aliases: ['game engineer'],
+        skills: 'unity, c#, blender, physics engine, animation, shader programming, unreal engine, 3d modeling, game ai, lighting',
+    }),
+]);
 
 const toTitleCase = (value = '') =>
     String(value || '')
@@ -395,6 +639,121 @@ const buildRecommendations = (missingKeywords = []) => {
     return recommendations;
 };
 
+const countAliasOccurrences = (searchText = '', alias = '') => {
+    const normalizedAlias = normalizeRoleAlias(alias);
+    if (!normalizedAlias) {
+        return 0;
+    }
+
+    const escaped = escapeRegExp(normalizedAlias);
+    const regex = normalizedAlias.includes(' ')
+        ? new RegExp(`(?:^|\\s)${escaped}(?=\\s|$)`, 'g')
+        : new RegExp(`\\b${escaped}\\b`, 'g');
+    const matches = String(searchText || '').match(regex) || [];
+    return matches.length;
+};
+
+const isRoleSkillPresent = ({ searchText = '', skill = '' }) => {
+    const normalizedSkill = normalizeRoleSkillTerm(skill);
+    if (!normalizedSkill) {
+        return false;
+    }
+
+    return countKeywordOccurrences(searchText, normalizedSkill) > 0;
+};
+
+const detectRoleSkillProfile = ({
+    profession = '',
+    combinedResumeText = '',
+    normalizedJobDescription = '',
+}) => {
+    const professionSearchText = buildRoleSkillSearchText(profession);
+    const resumeSearchText = buildRoleSkillSearchText(combinedResumeText);
+    const jobDescriptionSearchText = buildRoleSkillSearchText(normalizedJobDescription);
+    const contextSearchText = buildRoleSkillSearchText(
+        [profession, normalizedJobDescription, combinedResumeText.slice(0, 4500)].filter(Boolean).join(' '),
+    );
+
+    let bestMatch = null;
+
+    ROLE_SKILL_PROFILES.forEach((profile) => {
+        const aliasTitleHits = profile.aliases.reduce(
+            (sum, alias) => sum + countAliasOccurrences(professionSearchText, alias),
+            0,
+        );
+        const aliasContextHits = profile.aliases.reduce(
+            (sum, alias) => sum + countAliasOccurrences(contextSearchText, alias),
+            0,
+        );
+
+        let resumeSkillHits = 0;
+        let jdSkillHits = 0;
+        profile.skills.forEach((skill) => {
+            if (isRoleSkillPresent({ searchText: resumeSearchText, skill })) {
+                resumeSkillHits += 1;
+            }
+            if (isRoleSkillPresent({ searchText: jobDescriptionSearchText, skill })) {
+                jdSkillHits += 1;
+            }
+        });
+
+        const confidenceScore =
+            aliasTitleHits * 12 +
+            aliasContextHits * 7 +
+            jdSkillHits * 3 +
+            resumeSkillHits * 2;
+
+        if (
+            !bestMatch ||
+            confidenceScore > bestMatch.confidenceScore ||
+            (confidenceScore === bestMatch.confidenceScore &&
+                resumeSkillHits > bestMatch.resumeSkillHits)
+        ) {
+            bestMatch = {
+                profile,
+                aliasTitleHits,
+                aliasContextHits,
+                resumeSkillHits,
+                jdSkillHits,
+                confidenceScore,
+                resumeSearchText,
+            };
+        }
+    });
+
+    if (!bestMatch) {
+        return null;
+    }
+
+    const hasReliableSignal =
+        bestMatch.aliasTitleHits > 0 ||
+        bestMatch.aliasContextHits > 0 ||
+        bestMatch.resumeSkillHits >= 3 ||
+        bestMatch.jdSkillHits >= 3;
+
+    if (!hasReliableSignal) {
+        return null;
+    }
+
+    const matchedSkills = [];
+    const missingSkills = [];
+    bestMatch.profile.skills.forEach((skill) => {
+        if (isRoleSkillPresent({ searchText: bestMatch.resumeSearchText, skill })) {
+            matchedSkills.push(skill);
+        } else {
+            missingSkills.push(skill);
+        }
+    });
+
+    return {
+        profileId: bestMatch.profile.id,
+        profileName: bestMatch.profile.name,
+        confidenceScore: bestMatch.confidenceScore,
+        matchedSkills: dedupeNormalizedKeywords(matchedSkills, MAX_OUTPUT_LIST),
+        missingSkills: dedupeNormalizedKeywords(missingSkills, MAX_OUTPUT_LIST),
+    };
+};
+
 const buildAiAtsPrompt = ({
     profession = '',
     resumeText = '',
@@ -622,6 +981,13 @@ const calculateAtsScore = async ({
             countKeywordOccurrences(resumeSearchText, keyword),
         ]),
     );
+    const resumeRoleSkillSearchText = buildRoleSkillSearchText(combinedResumeText);
+    const detectedRoleProfile = detectRoleSkillProfile({
+        profession,
+        combinedResumeText,
+        normalizedJobDescription,
+    });
+    const roleProfileMissingSkills = detectedRoleProfile?.missingSkills || [];
 
     const isKeywordPresentInResume = (keyword = '') => {
         const normalized = normalizeKeywordTerm(keyword);
@@ -634,18 +1000,21 @@ const calculateAtsScore = async ({
 
         return resumeSet.has(key);
     };
+    const isTechnicalKeywordPresentInResume = (keyword = '') =>
+        isRoleSkillPresent({ searchText: resumeRoleSkillSearchText, skill: keyword }) ||
+        isKeywordPresentInResume(keyword);
 
     const technicalJdKeywords = jobDescriptionKeywords.filter((keyword) => isTechnicalKeyword(keyword));
     const nonTechnicalJdKeywords = jobDescriptionKeywords.filter((keyword) => !isTechnicalKeyword(keyword));
 
-    const missingTechnicalKeywords = technicalJdKeywords.filter((keyword) => !isKeywordPresentInResume(keyword));
+    const missingTechnicalKeywords = technicalJdKeywords.filter((keyword) => !isTechnicalKeywordPresentInResume(keyword));
     const weakTechnicalKeywords = technicalJdKeywords.filter((keyword) => {
         const normalized = normalizeKeywordTerm(keyword);
         if (!normalized) {
             return false;
         }
 
-        if (!isKeywordPresentInResume(normalized)) {
+        if (!isTechnicalKeywordPresentInResume(normalized)) {
             return false;
         }
 
@@ -668,10 +1037,13 @@ const calculateAtsScore = async ({
         const occurrences = Number(keywordPresenceMap.get(normalized) || 0);
         return occurrences <= WEAK_VOCAB_OCCURRENCE_THRESHOLD;
     });
+    const technicalGapKeywords = detectedRoleProfile
+        ? missingTechnicalKeywords
+        : [...missingTechnicalKeywords, ...weakTechnicalKeywords];
 
     const missingSkills = ensurePrioritizedGapList({
-        candidates: [...missingTechnicalKeywords, ...weakTechnicalKeywords],
-        preferred: [...missingTechnicalKeywords, ...technicalJdKeywords],
+        candidates: [...roleProfileMissingSkills, ...technicalGapKeywords],
+        preferred: [...roleProfileMissingSkills, ...missingTechnicalKeywords, ...technicalJdKeywords],
         max: MAX_OUTPUT_LIST,
     });
     const missingKeywords = ensurePrioritizedGapList({
@@ -768,10 +1140,25 @@ const calculateAtsScore = async ({
         finalRecommendations = baseRecommendations;
     }
 
+    if (roleProfileMissingSkills.length) {
+        finalMissingSkills = ensurePrioritizedGapList({
+            candidates: [...roleProfileMissingSkills, ...finalMissingSkills],
+            preferred: [...roleProfileMissingSkills, ...finalMissingSkills],
+            max: MAX_OUTPUT_LIST,
+        });
+    }
+
+    if (!finalRecommendations.length) {
+        finalRecommendations = buildRecommendations([...finalMissingSkills, ...finalMissingKeywords]);
+    }
+
     const result = {
         extractedResumeSkills: extractedResumeSkills.slice(0, MAX_RESULT_KEYWORDS),
         normalizedResumeSkills: normalizedResumeSkills.slice(0, MAX_RESULT_KEYWORDS),
         normalizedUserSkills: normalizedUserSkills.slice(0, MAX_OUTPUT_LIST),
+        detectedRoleProfile: detectedRoleProfile?.profileName || '',
+        roleMatchedSkills: (detectedRoleProfile?.matchedSkills || []).slice(0, MAX_OUTPUT_LIST),
+        roleMissingSkills: roleProfileMissingSkills.slice(0, MAX_OUTPUT_LIST),
         jobDescriptionKeywords: jobDescriptionKeywords.slice(0, MAX_RESULT_KEYWORDS),
         matchedKeywords: finalMatchedKeywords.slice(0, MAX_OUTPUT_LIST),
         missingKeywords: finalMissingKeywords.slice(0, MAX_OUTPUT_LIST),
