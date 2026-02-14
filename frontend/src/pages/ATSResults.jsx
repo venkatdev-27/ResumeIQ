@@ -11,9 +11,8 @@ import {
     ProgressTrack,
     ProgressValue,
 } from '@/components/animate-ui/components/base/progress';
-import AISuggestions from '@/components/ai/AISuggestions';
 import { fetchATSScore } from '@/redux/atsSlice';
-import { clearAISuggestions, fetchAISuggestions } from '@/redux/aiSlice';
+import { clearAISuggestions } from '@/redux/aiSlice';
 import { ROUTES } from '@/utils/constants';
 import { resumeFormToText } from '@/utils/helpers';
 
@@ -51,11 +50,9 @@ function ATSResults() {
 
     const { uploadedText, resumeId, form } = useSelector((state) => state.resume);
     const ats = useSelector((state) => state.ats);
-    const ai = useSelector((state) => state.ai);
 
     const [jobDescription, setJobDescription] = React.useState(() => String(location.state?.jobDescription || ''));
     const [loadingProgress, setLoadingProgress] = React.useState(0);
-    const [aiLoadingProgress, setAiLoadingProgress] = React.useState(0);
     const [animatedScore, setAnimatedScore] = React.useState(0);
     const [isNarrowViewport, setIsNarrowViewport] = React.useState(() =>
         typeof window !== 'undefined' ? window.innerWidth < 360 : false,
@@ -111,25 +108,6 @@ function ATSResults() {
     }, [ats.status]);
 
     React.useEffect(() => {
-        if (ai.status !== 'loading') {
-            setAiLoadingProgress(0);
-            return undefined;
-        }
-
-        setAiLoadingProgress(1);
-        const timer = window.setInterval(() => {
-            setAiLoadingProgress((prev) => {
-                if (prev >= 100) {
-                    return 100;
-                }
-                return Math.min(prev + 5, 100);
-            });
-        }, 200);
-
-        return () => window.clearInterval(timer);
-    }, [ai.status]);
-
-    React.useEffect(() => {
         if (typeof window === 'undefined') {
             return undefined;
         }
@@ -179,17 +157,12 @@ function ATSResults() {
     };
 
     const handleFetchAI = async () => {
-        const atsAction = await dispatch(fetchATSScore({ jobDescription }));
-        if (!fetchATSScore.fulfilled.match(atsAction)) {
-            return;
-        }
-
-        await dispatch(
-            fetchAISuggestions({
+        navigate(ROUTES.atsImprovements, {
+            state: {
+                runAi: true,
                 jobDescription,
-                atsContext: atsAction.payload,
-            }),
-        );
+            },
+        });
     };
 
     if (!hasResumeContent) {
@@ -367,7 +340,6 @@ function ATSResults() {
                                 </div>
                                 <Button
                                     onClick={handleFetchAI}
-                                    loading={ai.status === 'loading'}
                                     size="sm"
                                     className="w-full max-[350px]:h-9 max-[350px]:text-xs sm:w-auto"
                                 >
@@ -385,32 +357,6 @@ function ATSResults() {
                                     onChange={(event) => setJobDescription(event.target.value)}
                                     placeholder="Paste target job description for more role-specific AI feedback."
                                     className="min-h-[120px] w-full resize-y rounded-lg border border-[#bec6d6] bg-[#f2f4f8] px-3 py-2 text-sm text-[#2e2e2e] placeholder:text-[#6b7280] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4f67ff]/55"
-                                />
-                            </div>
-
-                            {ai.status === 'loading' ? (
-                                <div className="mt-4">
-                                    <Progress value={aiLoadingProgress} className="w-full space-y-2">
-                                        <div className="flex items-start justify-between gap-2">
-                                            <ProgressLabel className="min-w-0 break-words text-xs sm:text-sm">
-                                                AI is generating improvements
-                                            </ProgressLabel>
-                                            <span className="text-sm text-[#4b4b53]">
-                                                <ProgressValue /> %
-                                            </span>
-                                        </div>
-                                        <ProgressTrack />
-                                    </Progress>
-                                </div>
-                            ) : null}
-
-                            <div className="mt-5 min-w-0 max-w-full overflow-x-hidden">
-                                <AISuggestions
-                                    suggestions={ai.suggestions}
-                                    improvedResume={ai.improvedResume}
-                                    status={ai.status === 'loading' ? 'idle' : ai.status}
-                                    error={ai.error}
-                                    className="max-w-full"
                                 />
                             </div>
                         </section>
