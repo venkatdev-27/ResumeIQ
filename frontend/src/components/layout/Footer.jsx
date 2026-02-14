@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { Github, Linkedin, Mail } from 'lucide-react';
 
 const quickLinks = [
     { label: 'Home', to: '/' },
@@ -8,10 +9,30 @@ const quickLinks = [
 ];
 
 const resources = ['ATS Tips', 'Resume Templates', 'Career Blog', 'Interview Prep'];
+const socialLinks = [
+    {
+        label: 'Email',
+        href: 'mailto:kosurivenky50@gmail.com',
+        display: 'kosurivenky50@gmail.com',
+        Icon: Mail,
+    },
+    {
+        label: 'GitHub',
+        href: 'https://github.com/venkatdev-27/ResumeIQ',
+        display: 'github.com/venkatdev-27/ResumeIQ',
+        Icon: Github,
+    },
+    {
+        label: 'LinkedIn',
+        href: 'https://linkedin.com/in/venkat18',
+        display: 'linkedin.com/in/venkat18',
+        Icon: Linkedin,
+    },
+];
 
 function Footer() {
     return (
-        <footer id="contact" className="mt-16 border-t border-border bg-[#b2f0e5] text-foreground">
+        <footer id="contact" className="mt-16 border-t border-[#d8e0ec] bg-[#f8fbff] text-foreground">
             <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-3 lg:px-8">
                 <div>
                     <h3 className="font-ui-heading text-xl font-semibold text-foreground">Resume Atlas</h3>
@@ -42,13 +63,23 @@ function Footer() {
                             </li>
                         ))}
                     </ul>
-                    <div className="font-ui-body mt-5 text-sm text-muted-foreground">
-                        <p>Email: support@resumeatlas.ai</p>
-                        <p>Phone: +1 (555) 948-1122</p>
+                    <div className="font-ui-body mt-5 space-y-2 text-sm text-muted-foreground">
+                        {socialLinks.map(({ label, href, display, Icon }) => (
+                            <a
+                                key={label}
+                                href={href}
+                                target={label === 'Email' ? undefined : '_blank'}
+                                rel={label === 'Email' ? undefined : 'noreferrer'}
+                                className="group inline-flex w-full min-w-0 items-center gap-2 break-all transition hover:text-primary"
+                            >
+                                <Icon className="h-4 w-4 shrink-0" />
+                                <span className="min-w-0">{display}</span>
+                            </a>
+                        ))}
                     </div>
                 </div>
             </div>
-            <div className="border-t border-border">
+            <div className="border-t border-[#d8e0ec]">
                 <div className="font-ui-body mx-auto flex max-w-6xl flex-col gap-2 px-4 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
                     <p>(c) {new Date().getFullYear()} Resume Atlas. All rights reserved.</p>
                     <p>Privacy Policy | Terms of Service</p>
