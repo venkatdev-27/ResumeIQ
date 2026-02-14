@@ -72,6 +72,8 @@ const buildVisibilityMask = (resumeData = {}) => {
 const applyVisibilityMask = (previewData = {}, maskSource = {}) => {
     const mask = buildVisibilityMask(maskSource);
     const previewPersonal = previewData?.personalDetails || {};
+    const sourceSkills = normalizeStringList(maskSource?.skills);
+    const previewSkills = normalizeStringList(previewData?.skills);
 
     return {
         ...previewData,
@@ -102,7 +104,7 @@ const applyVisibilityMask = (previewData = {}, maskSource = {}) => {
         education: mask.education
             ? normalizeEntryList(previewData?.education, ['institution', 'degree', 'startYear', 'endYear', 'description'])
             : [],
-        skills: mask.skills ? normalizeStringList(previewData?.skills) : [],
+        skills: mask.skills ? (sourceSkills.length ? sourceSkills : previewSkills) : [],
         certifications: mask.certifications ? normalizeStringList(previewData?.certifications) : [],
         achievements: mask.achievements ? normalizeStringList(previewData?.achievements) : [],
         hobbies: mask.hobbies ? normalizeStringList(previewData?.hobbies) : [],
