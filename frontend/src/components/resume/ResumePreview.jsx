@@ -32,6 +32,80 @@ const templates = {
 const A4_WIDTH = 794;
 const A4_HEIGHT = 1123;
 
+const hasText = (value) => Boolean(String(value ?? '').trim());
+
+const normalizeStringList = (value = []) =>
+    (Array.isArray(value) ? value : [])
+        .map((item) => String(item ?? '').trim())
+        .filter(Boolean);
+
+const normalizeEntryList = (value = [], keys = []) =>
+    (Array.isArray(value) ? value : [])
+        .filter((item) => keys.some((key) => hasText(item?.[key])));
+
+const buildVisibilityMask = (resumeData = {}) => {
+    const personal = resumeData?.personalDetails || {};
+
+    return {
+        personalDetails: {
+            fullName: hasText(personal.fullName),
+            title: hasText(personal.title),
+            email: hasText(personal.email),
+            phone: hasText(personal.phone),
+            location: hasText(personal.location),
+            summary: hasText(personal.summary),
+            linkedin: hasText(personal.linkedin),
+            website: hasText(personal.website),
+            photo: hasText(personal.photo),
+        },
+        workExperience: normalizeEntryList(resumeData?.workExperience, ['company', 'role', 'startDate', 'endDate', 'description']).length > 0,
+        projects: normalizeEntryList(resumeData?.projects, ['name', 'techStack', 'link', 'description']).length > 0,
+        internships: normalizeEntryList(resumeData?.internships, ['company', 'role', 'startDate', 'endDate', 'description']).length > 0,
+        education: normalizeEntryList(resumeData?.education, ['institution', 'degree', 'startYear', 'endYear', 'description']).length > 0,
+        skills: normalizeStringList(resumeData?.skills).length > 0,
+        certifications: normalizeStringList(resumeData?.certifications).length > 0,
+        achievements: normalizeStringList(resumeData?.achievements).length > 0,
+        hobbies: normalizeStringList(resumeData?.hobbies).length > 0,
+    };
+};
+
+const applyVisibilityMask = (previewData = {}, maskSource = {}) => {
+    const mask = buildVisibilityMask(maskSource);
+    const previewPersonal = previewData?.personalDetails || {};
+
+    return {
+        ...previewData,
+        personalDetails: {
+            ...previewPersonal,
+            fullName: mask.personalDetails.fullName ? String(previewPersonal.fullName || '').trim() : '',
+            title: mask.personalDetails.title ? String(previewPersonal.title || '').trim() : '',
+            email: mask.personalDetails.email ? String(previewPersonal.email || '').trim() : '',
+            phone: mask.personalDetails.phone ? String(previewPersonal.phone || '').trim() : '',
+            location: mask.personalDetails.location ? String(previewPersonal.location || '').trim() : '',
+            summary: mask.personalDetails.summary ? String(previewPersonal.summary || '').trim() : '',
+            linkedin: mask.personalDetails.linkedin ? String(previewPersonal.linkedin || '').trim() : '',
+            website: mask.personalDetails.website ? String(previewPersonal.website || '').trim() : '',
+            photo: mask.personalDetails.photo ? String(previewPersonal.photo || '').trim() : '',
+        },
+        workExperience: mask.workExperience
+            ? normalizeEntryList(previewData?.workExperience, ['company', 'role', 'startDate', 'endDate', 'description'])
+            : [],
+        projects: mask.projects
+            ? normalizeEntryList(previewData?.projects, ['name', 'techStack', 'link', 'description'])
+            : [],
+        internships: mask.internships
+            ? normalizeEntryList(previewData?.internships, ['company', 'role', 'startDate', 'endDate', 'description'])
+            : [],
+        education: mask.education
+            ? normalizeEntryList(previewData?.education, ['institution', 'degree', 'startYear', 'endYear', 'description'])
+            : [],
+        skills: mask.skills ? normalizeStringList(previewData?.skills) : [],
+        certifications: mask.certifications ? normalizeStringList(previewData?.certifications) : [],
+        achievements: mask.achievements ? normalizeStringList(previewData?.achievements) : [],
+        hobbies: mask.hobbies ? normalizeStringList(previewData?.hobbies) : [],
+    };
+};
+
 
 
 const buildPdfHtmlDocument = (resumeElement) => {
@@ -67,15 +141,10 @@ const buildPdfHtmlDocument = (resumeElement) => {
 function ResumePreview({ resumeData, enhancedResume, formData, template }) {
     const SelectedTemplate = useMemo(() => templates[template] || TemplateOne, [template]);
     const previewData = useMemo(() => {
-        if (enhancedResume && typeof enhancedResume === 'object') {
-            return enhancedResume;
-        }
-
-        if (resumeData && typeof resumeData === 'object') {
-            return resumeData;
-        }
-
-        return formToResumeData(formData || {});
+        const fallbackFromForm = formToResumeData(formData || {});
+        const rawUserData = resumeData && typeof resumeData === 'object' ? resumeData : fallbackFromForm;
+        const sourceData = enhancedResume && typeof enhancedResume === 'object' ? enhancedResume : rawUserData;
+        return applyVisibilityMask(sourceData, rawUserData);
     }, [enhancedResume, resumeData, formData]);
 
     const containerRef = useRef(null);

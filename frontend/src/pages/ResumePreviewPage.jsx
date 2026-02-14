@@ -90,7 +90,7 @@ function ResumePreviewPage() {
             <Navbar />
             <main className="mx-auto max-w-6xl px-4 py-4 sm:px-6 lg:px-8">
                 {hasContent ? (
-                    <ResumePreview resumeData={effectiveData} enhancedResume={enhancedResume} formData={form} template={template} />
+                    <ResumePreview resumeData={resumeData} enhancedResume={enhancedResume} formData={form} template={template} />
                 ) : (
                     <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
                         <p className="text-sm text-muted-foreground">No resume content found. Fill and save the form first.</p>
