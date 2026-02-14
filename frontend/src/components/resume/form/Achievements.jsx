@@ -8,7 +8,7 @@ function Achievements(props) {
             title="Achievements"
             placeholder="Reduced API latency by 40%, Winner - National Hackathon 2025"
             description="Add concrete achievements that highlight recognition and impact and sepated by dot ."
-            helperText="Highlight measurable wins and recognition."
+            helperText="Highlight measurable wins and recognition separated by dot '.' "
             hideTitle={true}
         />
     );

@@ -8,7 +8,7 @@ function Hobbies(props) {
             title="Hobbies"
             placeholder="Open-source contribution, Chess, Blogging"
             description="Add hobbies that positively represent your personality."
-            helperText="Optional: include hobbies that add positive personality context."
+            helperText="Optional: include hobbies that add positive personality context separated by dot '.' "
             hideTitle={true}
         />
     );

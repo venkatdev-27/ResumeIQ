@@ -8,7 +8,7 @@ function Certifications(props) {
             title="Certifications"
             placeholder="AWS Certified Developer, Google Cloud Associate Engineer"
             description="Add certifications that are active and relevant to your domain."
-            helperText="Include active certifications relevant to your target role."
+            helperText="Include active certifications relevant to your target role separated by dot '.' "
             hideTitle={true}
         />
     );
