@@ -10,7 +10,7 @@ import store from './redux/store';
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
         <Provider store={store}>
-            <BrowserRouter>
+            <BrowserRouter future={{ v7_relativeSplatPath: true }}>
                 <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
                     <App />
                 </ThemeProvider>
