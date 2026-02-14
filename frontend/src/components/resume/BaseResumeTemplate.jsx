@@ -189,11 +189,27 @@ function BaseResumeTemplate({ resumeData, config }) {
                     </div>
                     <div>
                         {heading('Achievements')}
-                        <p className={config.mutedTextClass}>{achievements.join(', ')}</p>
+                        {achievements.length > 0 ? (
+                            <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
+                                {achievements.map((item, index) => (
+                                    <li key={`${item}-${index}`} className="break-words text-[13px] leading-5">
+                                        {item}
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : null}
                     </div>
                     <div>
                         {heading('Hobbies')}
-                        <p className={config.mutedTextClass}>{hobbies.join(', ')}</p>
+                        {hobbies.length > 0 ? (
+                            <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
+                                {hobbies.map((item, index) => (
+                                    <li key={`${item}-${index}`} className="break-words text-[13px] leading-5">
+                                        {item}
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : null}
                     </div>
                 </section>
             )}
