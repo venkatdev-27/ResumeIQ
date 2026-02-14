@@ -1,79 +1,122 @@
 const clean = (value) => String(value ?? '').trim();
+const cleanOneLine = (value) =>
+    String(value ?? '')
+        .replace(/\r\n/g, ' ')
+        .replace(/\r/g, ' ')
+        .replace(/\n/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 
 const normalizeMultiline = (value) =>
     clean(value)
         .replace(/\r\n/g, '\n')
         .replace(/\r/g, '\n');
 
-const truncateSummary = (text, maxLines = 5, maxChars = 400) => {
+const truncateSummary = (text, maxLines = 4, maxCharsPerLine = 170) => {
     if (!text) return '';
-    
-    // Clean and normalize the text
-    const cleanText = text.trim().replace(/\s+/g, ' ');
-    
-    // If text is already short enough, return as is
-    if (cleanText.length <= maxChars) return cleanText;
-    
-    // Split into sentences
-    const sentences = cleanText.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [cleanText];
-    
-    // AI-inspired strict rules for summary reduction:
-    // 1. Maximum 5 lines/sentences
-    // 2. Maximum 400 characters total
-    // 3. Prioritize first sentences (most important information)
-    // 4. Remove filler words and redundant phrases
-    
-    let result = '';
-    let lineCount = 0;
-    
-    for (const sentence of sentences) {
-        if (lineCount >= maxLines) break;
-        
-        const trimmedSentence = sentence.trim();
-        if (!trimmedSentence) continue;
-        
-        // Skip very short sentences that don't add value (less than 5 chars)
-        if (trimmedSentence.length < 5) continue;
-        
-        // Remove common filler phrases
-        const cleanedSentence = trimmedSentence
-            .replace(/\b(with\s+experience\s+in|having\s+experience\s+in|skilled\s+in|expert\s+in)\b/gi, '')
-            .replace(/\b(and\s+more\b|etc\.\s*$|\sand\s+so\s+on\s*$)\b/gi, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-            
-        if (!cleanedSentence) continue;
-        
-        const potentialResult = result ? `${result} ${cleanedSentence}` : cleanedSentence;
-        
-        // Check if adding this sentence would exceed character limit
-        if (potentialResult.length > maxChars) {
-            // If current result is already good, break
-            if (result.length > 100) break;
-            // Otherwise, truncate the current sentence to fit
-            const remainingChars = maxChars - result.length;
-            if (remainingChars > 20) {
-                result += ` ${cleanedSentence.slice(0, remainingChars - 3)}...`;
-            }
-            break;
+
+    const normalizedText = normalizeMultiline(text);
+    const explicitLines = normalizedText
+        .split('\n')
+        .map((line) => cleanOneLine(line))
+        .filter(Boolean);
+
+    const sentenceLines = normalizedText
+        .replace(/\n/g, ' ')
+        .split(/(?<=[.!?])\s+/)
+        .map((line) => cleanOneLine(line))
+        .filter(Boolean);
+
+    const clauseLines = normalizedText
+        .replace(/\n/g, ' ')
+        .split(/[,;]\s+/)
+        .map((line) => cleanOneLine(line))
+        .filter(Boolean);
+
+    const merged = [];
+    const pushUnique = (line) => {
+        const value = cleanOneLine(line);
+        if (!value) {
+            return;
         }
-        
-        result = potentialResult;
-        lineCount++;
+        if (!merged.some((item) => item.toLowerCase() === value.toLowerCase())) {
+            merged.push(value);
+        }
+    };
+
+    explicitLines.forEach(pushUnique);
+    sentenceLines.forEach(pushUnique);
+    clauseLines.forEach(pushUnique);
+
+    if (!merged.length) {
+        return '';
     }
-    
-    // Final cleanup and ensure we don't exceed maxChars
-    return result.length > maxChars 
-        ? result.slice(0, maxChars - 3).trim() + '...' 
-        : result.trim();
+
+    const finalLines = merged
+        .map((line) => {
+            const trimmed = line.slice(0, maxCharsPerLine).trim();
+            if (!trimmed) {
+                return '';
+            }
+            return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+        })
+        .filter(Boolean);
+
+    const fixedLines = [...finalLines];
+    const seedLines = [...finalLines];
+    let cursor = 0;
+    while (fixedLines.length < maxLines && seedLines.length) {
+        fixedLines.push(seedLines[cursor % seedLines.length]);
+        cursor += 1;
+    }
+
+    return fixedLines.slice(0, maxLines).join('\n');
 };
 
 const hasAnyValue = (item, keys = []) => keys.some((key) => Boolean(clean(item?.[key])));
 
 const normalizeStringList = (value) =>
     Array.isArray(value)
-        ? value.map((item) => clean(item)).filter(Boolean)
+        ? value.map((item) => cleanOneLine(item)).filter(Boolean)
         : [];
+
+const dedupeLines = (value = []) => {
+    const seen = new Set();
+    return (Array.isArray(value) ? value : [])
+        .map((item) => cleanOneLine(item))
+        .filter((item) => {
+            if (!item) {
+                return false;
+            }
+
+            const key = item.toLowerCase();
+            if (seen.has(key)) {
+                return false;
+            }
+            seen.add(key);
+            return true;
+        });
+};
+
+const ensureThreeBulletLines = (lines = [], fallback = []) => {
+    const base = dedupeLines(lines);
+    const fallbackLines = dedupeLines(fallback);
+    const merged = dedupeLines([...base, ...fallbackLines]);
+
+    if (!merged.length) {
+        return [];
+    }
+
+    const fixed = [...merged];
+    const seed = [...merged];
+    let cursor = 0;
+    while (fixed.length < 3 && seed.length) {
+        fixed.push(seed[cursor % seed.length]);
+        cursor += 1;
+    }
+
+    return fixed.slice(0, 3);
+};
 
 export const joinNonEmpty = (values = [], separator = ' | ') =>
     (Array.isArray(values) ? values : [])
@@ -90,7 +133,7 @@ const normalizePersonalDetails = (value = {}) => ({
     email: clean(value.email),
     phone: clean(value.phone),
     location: clean(value.location),
-    summary: truncateSummary(normalizeMultiline(value.summary), 5, 400),
+    summary: truncateSummary(normalizeMultiline(value.summary), 4, 400),
     linkedin: clean(value.linkedin),
     website: clean(value.website),
     photo: clean(value.photo),
@@ -116,7 +159,7 @@ const normalizeProjects = (value = []) =>
             link: clean(item.link),
             description: normalizeMultiline(item.description),
         }))
-        .filter((item) => hasAnyValue(item, ['name'])); // Only require name to show project
+        .filter((item) => hasAnyValue(item, ['name', 'techStack', 'link', 'description']));
 
 const normalizeInternships = (value = []) =>
     (Array.isArray(value) ? value : [])
@@ -742,7 +785,7 @@ export const toBullets = (value, fallbackBullets = []) => {
     const bulletPrefix = /^[\u2022*-]\s*/;
 
     if (!text) {
-        return normalizeStringList(fallbackBullets).slice(0, 3);
+        return ensureThreeBulletLines([], fallbackBullets);
     }
 
     const explicitLines = text
@@ -751,11 +794,11 @@ export const toBullets = (value, fallbackBullets = []) => {
         .filter(Boolean);
 
     if (explicitLines.length > 1) {
-        return explicitLines.slice(0, 3);
+        return ensureThreeBulletLines(explicitLines, fallbackBullets);
     }
 
     if (explicitLines.length === 1 && bulletPrefix.test(text)) {
-        return explicitLines;
+        return ensureThreeBulletLines(explicitLines, fallbackBullets);
     }
 
     const sentenceLines = text
@@ -764,8 +807,21 @@ export const toBullets = (value, fallbackBullets = []) => {
         .filter(Boolean);
 
     if (sentenceLines.length) {
-        return sentenceLines.slice(0, 3);
+        const base = sentenceLines.slice(0, 3);
+        if (base.length === 3) {
+            return base;
+        }
+
+        const expanded = dedupeLines([
+            ...base,
+            ...text
+                .split(/[,;]\s+/)
+                .map((line) => cleanOneLine(line))
+                .filter(Boolean),
+        ]);
+
+        return ensureThreeBulletLines(expanded, fallbackBullets);
     }
 
-    return normalizeStringList(fallbackBullets).slice(0, 3);
+    return ensureThreeBulletLines([], fallbackBullets);
 };
