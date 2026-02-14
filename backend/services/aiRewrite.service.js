@@ -8,10 +8,9 @@ const TARGET_SUMMARY_MAX_WORDS = 47;
 const TARGET_SUMMARY_WORDS = 46;
 
 const TARGET_BULLET_LINES = 3;
-const TARGET_BULLET_WORDS = 15;
+const TARGET_BULLET_WORDS = 14;
 const TARGET_SHORT_LIST_ITEMS = 20;
 const ACTION_VERBS = ['Delivered', 'Engineered', 'Implemented', 'Optimized', 'Architected', 'Streamlined', 'Automated', 'Integrated', 'Developed', 'Deployed', 'Enhanced'];
-const ACTION_VERB_SET = new Set(ACTION_VERBS.map((verb) => verb.toLowerCase()));
 const SUMMARY_FALLBACK_TOKENS = [
     'enterprise',
     'platforms',
@@ -42,6 +41,52 @@ const BULLET_FALLBACK_TOKENS = [
     'and',
     'maintainable',
     'outcomes',
+];
+const BULLET_ENDING_TOKENS = [
+    'outcomes',
+    'impact',
+    'quality',
+    'stability',
+    'security',
+    'scalability',
+    'reliability',
+    'efficiency',
+    'resilience',
+    'adoption',
+    'readiness',
+    'performance',
+    'consistency',
+    'maintainability',
+    'excellence',
+];
+const BULLET_PROFESSIONAL_VOCABULARY = [
+    'analysis', 'architecture', 'automation', 'availability', 'benchmarking', 'capability', 'clarity', 'collaboration',
+    'compliance', 'consistency', 'coordination', 'coverage', 'debugging', 'delivery', 'deployment', 'design',
+    'documentation', 'efficiency', 'enablement', 'encryption', 'enhancement', 'evaluation', 'execution',
+    'experimentation', 'governance', 'hardening', 'implementation', 'improvement', 'innovation', 'integration',
+    'maintainability', 'management', 'migration', 'modularity', 'monitoring', 'optimization', 'orchestration',
+    'performance', 'planning', 'prioritization', 'quality', 'reliability', 'remediation', 'resilience',
+    'responsiveness', 'scalability', 'security', 'simplification', 'standardization', 'stability', 'strategy',
+    'sustainability', 'testing', 'traceability', 'transformation', 'troubleshooting', 'validation', 'visibility',
+    'workflow', 'accuracy', 'adaptability', 'alignment', 'assessment', 'assurance', 'auditing', 'backlog',
+    'baseline', 'calibration', 'capacity', 'checkpoint', 'cohesion', 'communication', 'configuration', 'connectivity',
+    'consolidation', 'continuity', 'control', 'correctness', 'craftsmanship', 'credibility', 'diagnostics',
+    'discipline', 'discoverability', 'durability', 'elasticity', 'escalation', 'estimation', 'evidence', 'excellence',
+    'fault-tolerance', 'feasibility', 'fitment', 'forecasting', 'framework', 'goals', 'guardrails', 'handover',
+    'hygiene', 'identity', 'incident', 'indexing', 'inspection', 'insight', 'instrumentation', 'integrity',
+    'interoperability', 'iteration', 'latency', 'lifecycle', 'loadbalancing', 'maintainers', 'maintainership',
+    'maturity', 'metrics', 'milestones', 'modernization', 'observability', 'onboarding', 'operability', 'ownership',
+    'partitioning', 'patterns', 'pipelines', 'portability', 'pragmatism', 'precision', 'preparedness', 'prevention',
+    'productivity', 'profiling', 'progress', 'protection', 'readability', 'readiness', 'recoverability', 'refactoring',
+    'regression', 'release', 'repeatability', 'reporting', 'requirements', 'reviewability', 'roadmap', 'robustness',
+    'safeguards', 'scheduling', 'scope', 'serviceability', 'service-levels', 'simplicity', 'skills', 'source-control',
+    'stakeholders', 'standards', 'streamlining', 'structure', 'supportability', 'synchronization', 'telemetry',
+    'throughput', 'timeliness', 'tooling', 'transparency', 'trust', 'uptime', 'usability', 'versioning', 'velocity',
+    'verification', 'architecture-led', 'business-alignment', 'customer-impact', 'deployment-readiness', 'devops',
+    'engineering', 'feature-delivery', 'incident-response', 'knowledge-sharing', 'platform-thinking', 'problem-solving',
+    'release-confidence', 'risk-control', 'scalable-design', 'service-quality', 'solutioning', 'system-thinking',
+    'technical-depth', 'value-delivery', 'quality-gates', 'integration-depth', 'code-health', 'operational-excellence',
+    'production-readiness', 'continuous-improvement', 'testability', 'reusability', 'maintainer-focus', 'secure-by-design',
 ];
 
 const truncateText = (value = '', max = 1200) => String(value || '').trim().slice(0, max);
@@ -161,6 +206,17 @@ const normalizeOneLineList = (value, max = TARGET_SHORT_LIST_ITEMS) =>
 const tokenizeWords = (value = '') =>
     compactToOneLine(value).match(/[A-Za-z0-9+#./-]+/g) || [];
 
+const toWordKey = (token = '') =>
+    String(token || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9+#]/g, '');
+
+const sanitizeToken = (token = '') =>
+    String(token || '')
+        .trim()
+        .replace(/^[,.;:!?]+/, '')
+        .replace(/[,.;:!?]+$/, '');
+
 const dedupeTokensCaseInsensitive = (tokens = []) => {
     const seen = new Set();
     return (Array.isArray(tokens) ? tokens : []).filter((token) => {
@@ -219,6 +275,62 @@ const pickActionVerb = (seed = '') => {
     return ACTION_VERBS[index];
 };
 
+const pickUniqueActionVerb = ({ seed = '', bulletIndex = 0, usedWordKeys = new Set() }) => {
+    const baseSeed = compactToOneLine(seed || '');
+    const startIndex = (baseSeed.length + Number(bulletIndex || 0)) % ACTION_VERBS.length;
+
+    for (let offset = 0; offset < ACTION_VERBS.length; offset += 1) {
+        const candidate = ACTION_VERBS[(startIndex + offset) % ACTION_VERBS.length];
+        const candidateKey = toWordKey(candidate);
+        if (!usedWordKeys.has(candidateKey)) {
+            return candidate;
+        }
+    }
+
+    return ACTION_VERBS[startIndex];
+};
+
+const pushUniqueBulletToken = ({
+    token,
+    result = [],
+    lineWordKeys = new Set(),
+    usedWordKeys = new Set(),
+    avoidUsedWords = true,
+}) => {
+    const safeToken = sanitizeToken(token);
+    const key = toWordKey(safeToken);
+
+    if (!safeToken || !key || lineWordKeys.has(key)) {
+        return false;
+    }
+
+    if (avoidUsedWords && usedWordKeys.has(key)) {
+        return false;
+    }
+
+    result.push(safeToken);
+    lineWordKeys.add(key);
+    return true;
+};
+
+const pickEndingToken = (lineWordKeys = new Set(), usedWordKeys = new Set()) => {
+    const withGlobalUniqueness = BULLET_ENDING_TOKENS.find((token) => {
+        const key = toWordKey(token);
+        return key && !lineWordKeys.has(key) && !usedWordKeys.has(key);
+    });
+
+    if (withGlobalUniqueness) {
+        return withGlobalUniqueness;
+    }
+
+    const withLineUniqueness = BULLET_ENDING_TOKENS.find((token) => {
+        const key = toWordKey(token);
+        return key && !lineWordKeys.has(key);
+    });
+
+    return withLineUniqueness || BULLET_ENDING_TOKENS[0];
+};
+
 const buildSummaryContextTokens = (resumeData = {}) => {
     const safeResumeData = ensureObject(resumeData);
     const personal = ensureObject(safeResumeData.personalDetails);
@@ -246,115 +358,123 @@ const pickLabelTokens = (value = '', maxTokens = 3) =>
         .filter(Boolean)
         .slice(0, maxTokens);
 
+const summaryWordCount = (value = '') => tokenizeWords(value).length;
+
+const appendWordToSentence = (line = '', token = '') => {
+    const base = compactToOneLine(line).replace(/[.!?]+$/, '').trim();
+    const safeToken = sanitizeToken(token);
+    if (!base || !safeToken) {
+        return ensureSentenceEnding(base || line);
+    }
+    return ensureSentenceEnding(`${base} ${safeToken}`);
+};
+
+const trimSentenceByOneWord = (line = '', minWords = 7) => {
+    const tokens = tokenizeWords(line);
+    if (tokens.length <= minWords) {
+        return ensureSentenceEnding(line);
+    }
+    return ensureSentenceEnding(tokens.slice(0, -1).join(' '));
+};
+
+const fitSummaryLinesToWordRange = (lines = [], options = {}) => {
+    const {
+        minWords = TARGET_SUMMARY_MIN_WORDS,
+        maxWords = TARGET_SUMMARY_MAX_WORDS,
+        targetWords = TARGET_SUMMARY_WORDS,
+    } = ensureObject(options);
+
+    const seeded = fillToFixedLineCount(lines, TARGET_SUMMARY_LINES, DEFAULT_PROFESSIONAL_SUMMARY_LINES, {
+        allowVerbRewrites: false,
+    }).map((line) => ensureSentenceEnding(line));
+
+    const tuningPool = [...SUMMARY_FALLBACK_TOKENS, 'alignment', 'execution', 'impact', 'outcomes', 'value'];
+    let tuningCursor = 0;
+    let totalWords = summaryWordCount(seeded.join(' '));
+
+    while (totalWords < minWords) {
+        const token = tuningPool[tuningCursor % tuningPool.length];
+        tuningCursor += 1;
+        seeded[TARGET_SUMMARY_LINES - 1] = appendWordToSentence(seeded[TARGET_SUMMARY_LINES - 1], token);
+        totalWords = summaryWordCount(seeded.join(' '));
+    }
+
+    const trimOrder = [3, 2, 0, 1];
+    while (totalWords > maxWords) {
+        const before = totalWords;
+        for (const lineIndex of trimOrder) {
+            const currentLineWords = summaryWordCount(seeded[lineIndex]);
+            if (currentLineWords <= 8) {
+                continue;
+            }
+            seeded[lineIndex] = trimSentenceByOneWord(seeded[lineIndex], 8);
+            totalWords = summaryWordCount(seeded.join(' '));
+            if (totalWords < before) {
+                break;
+            }
+        }
+
+        if (totalWords >= before) {
+            break;
+        }
+    }
+
+    if (totalWords < minWords || totalWords > maxWords) {
+        return DEFAULT_PROFESSIONAL_SUMMARY_LINES;
+    }
+
+    // Keep centered around the preferred target when possible.
+    while (totalWords < targetWords && totalWords < maxWords) {
+        const token = tuningPool[tuningCursor % tuningPool.length];
+        tuningCursor += 1;
+        seeded[TARGET_SUMMARY_LINES - 1] = appendWordToSentence(seeded[TARGET_SUMMARY_LINES - 1], token);
+        totalWords = summaryWordCount(seeded.join(' '));
+    }
+
+    return seeded.slice(0, TARGET_SUMMARY_LINES).map((line) => ensureSentenceEnding(line));
+};
+
 const buildContextDrivenSummary = (resumeData = {}) => {
-    const titleTokens = pickLabelTokens(deriveProfessionalTitle(resumeData), 2);
-    const skillTokens = dedupeTokensCaseInsensitive(
-        normalizeSkills(resumeData?.skills)
-            .slice(0, 6)
-            .flatMap((skill) => pickLabelTokens(skill, 1)),
-    );
+    const title = pickLabelTokens(deriveProfessionalTitle(resumeData), 2).join(' ') || 'Technology Professional';
+    const summarySkills = normalizeSkills(resumeData?.skills).slice(0, 4);
     const workLabel = toDisplayList(extractWorkLabels(resumeData), 1);
     const internshipLabel = toDisplayList(extractInternshipLabels(resumeData), 1);
     const projectLabel = toDisplayList(extractProjectLabels(resumeData), 1);
-    const experienceTokens = pickLabelTokens(workLabel || internshipLabel, 3);
-    const projectTokens = pickLabelTokens(projectLabel || internshipLabel || workLabel, 3);
     const hasContextData =
         Boolean(compactToOneLine(resumeData?.personalDetails?.title || '')) ||
-        skillTokens.length > 0 ||
-        experienceTokens.length > 0 ||
-        projectTokens.length > 0;
+        summarySkills.length > 0 ||
+        hasText(workLabel) ||
+        hasText(internshipLabel) ||
+        hasText(projectLabel);
 
     if (!hasContextData) {
         return buildDefaultProfessionalSummary();
     }
 
-    const lineTargets = distributeWordsAcrossLines(TARGET_SUMMARY_WORDS, TARGET_SUMMARY_LINES);
-    const contextPool = dedupeTokensCaseInsensitive([
-        ...titleTokens,
-        ...skillTokens,
-        ...experienceTokens,
-        ...projectTokens,
-        ...buildSummaryContextTokens(resumeData),
-        ...SUMMARY_FALLBACK_TOKENS,
-    ]);
+    const lines = [];
+    lines.push(`${title} delivering scalable software solutions through disciplined execution and business value.`);
 
-    if (!contextPool.length) {
-        return buildDefaultProfessionalSummary();
+    if (summarySkills.length) {
+        lines.push(`Core skills include ${summarySkills.join(', ')}, enabling maintainable architecture and efficient delivery.`);
+    } else {
+        lines.push('Core capabilities include maintainable architecture, reliable integration patterns, testing rigor, and quality-focused delivery.');
     }
 
-    const lineOneTokens = fillTokensToTarget(
-        [
-            ...titleTokens,
-            'professional',
-            'delivering',
-            'reliable',
-            'scalable',
-            'software',
-            'solutions',
-            'aligned',
-            'with',
-            'target',
-            'role',
-            'expectations',
-        ],
-        lineTargets[0] || 12,
-        [contextPool],
-    );
+    if (workLabel) {
+        lines.push(`Experience includes ${workLabel}, leading implementation, testing, integration, and continuous optimization.`);
+    } else if (internshipLabel) {
+        lines.push(`Internship exposure includes ${internshipLabel}, supporting implementation, testing, collaboration, and dependable execution.`);
+    } else {
+        lines.push('Experience demonstrates implementation ownership, structured problem-solving, documentation quality, and measurable delivery consistency.');
+    }
 
-    const lineTwoTokens = fillTokensToTarget(
-        [
-            'Core',
-            'skills',
-            'include',
-            ...skillTokens.slice(0, 4),
-            'with',
-            'focus',
-            'on',
-            'maintainable',
-            'architecture',
-        ],
-        lineTargets[1] || 12,
-        [contextPool],
-    );
+    if (projectLabel) {
+        lines.push(`Projects include ${projectLabel}, demonstrating ownership, communication, adaptability, and dependable stakeholder alignment.`);
+    } else {
+        lines.push('Projects and internships demonstrate ownership, communication, adaptability, and dependable stakeholder alignment.');
+    }
 
-    const lineThreeTokens = fillTokensToTarget(
-        [
-            'Experience',
-            'spans',
-            ...experienceTokens,
-            'driving',
-            'implementation',
-            'testing',
-            'integration',
-            'and',
-            'improvement',
-        ],
-        lineTargets[2] || 11,
-        [contextPool],
-    );
-
-    const lineFourTokens = fillTokensToTarget(
-        [
-            'Projects',
-            'and',
-            'internships',
-            'demonstrate',
-            ...projectTokens,
-            'through',
-            'ownership',
-            'collaboration',
-            'and',
-            'delivery',
-        ],
-        lineTargets[3] || 11,
-        [contextPool],
-    );
-
-    const lines = [lineOneTokens, lineTwoTokens, lineThreeTokens, lineFourTokens]
-        .map((tokens) => ensureSentenceEnding(tokens.join(' ')))
-        .slice(0, TARGET_SUMMARY_LINES);
-
-    return lines.join('\n');
+    return fitSummaryLinesToWordRange(lines).join('\n');
 };
 
 const enforceSummaryFormat = (lines = [], resumeData = {}) => {
@@ -414,41 +534,112 @@ const enforceSummaryFormat = (lines = [], resumeData = {}) => {
 };
 
 const enforceBulletWordCount = (line = '', options = {}) => {
-    const { contextLabel = '', sourceText = '' } = ensureObject(options);
+    const { contextLabel = '', sourceText = '', bulletIndex = 0, usedWordKeys = new Set() } = ensureObject(options);
     const baseText = compactToOneLine(line) || compactToOneLine(sourceText);
-    let tokens = tokenizeWords(baseText);
-    const requiredVerb = pickActionVerb(contextLabel || sourceText || line);
-
-    if (!tokens.length) {
-        tokens = [requiredVerb];
-    }
-
-    if (!ACTION_VERB_SET.has(String(tokens[0] || '').toLowerCase())) {
-        tokens.unshift(requiredVerb);
-    } else {
-        const normalizedVerb = ACTION_VERBS.find((verb) => verb.toLowerCase() === String(tokens[0] || '').toLowerCase());
-        tokens[0] = normalizedVerb || requiredVerb;
-    }
-
+    const baseTokens = tokenizeWords(baseText);
     const contextTokens = dedupeTokensCaseInsensitive(
         tokenizeWords([contextLabel, sourceText].filter(Boolean).join(' '))
             .filter((token) => token.length > 2),
     );
+    const tokenPools = [
+        baseTokens,
+        contextTokens,
+        BULLET_PROFESSIONAL_VOCABULARY,
+        BULLET_FALLBACK_TOKENS,
+    ];
 
-    const finalTokens = fillTokensToTarget(
-        tokens.slice(0, TARGET_BULLET_WORDS),
-        TARGET_BULLET_WORDS,
-        [contextTokens, BULLET_FALLBACK_TOKENS],
-    );
+    const result = [];
+    const lineWordKeys = new Set();
+    const requiredVerb = pickUniqueActionVerb({
+        seed: contextLabel || sourceText || line || pickActionVerb(baseText),
+        bulletIndex,
+        usedWordKeys,
+    });
 
-    if (!ACTION_VERB_SET.has(String(finalTokens[0] || '').toLowerCase())) {
-        finalTokens[0] = requiredVerb;
-    } else {
-        const normalizedVerb = ACTION_VERBS.find((verb) => verb.toLowerCase() === String(finalTokens[0] || '').toLowerCase());
-        finalTokens[0] = normalizedVerb || requiredVerb;
+    pushUniqueBulletToken({
+        token: requiredVerb,
+        result,
+        lineWordKeys,
+        usedWordKeys,
+        avoidUsedWords: false,
+    });
+
+    tokenPools.forEach((pool) => {
+        if (result.length >= TARGET_BULLET_WORDS) {
+            return;
+        }
+        pool.forEach((token) => {
+            if (result.length >= TARGET_BULLET_WORDS) {
+                return;
+            }
+            pushUniqueBulletToken({
+                token,
+                result,
+                lineWordKeys,
+                usedWordKeys,
+                avoidUsedWords: true,
+            });
+        });
+    });
+
+    tokenPools.forEach((pool) => {
+        if (result.length >= TARGET_BULLET_WORDS) {
+            return;
+        }
+        pool.forEach((token) => {
+            if (result.length >= TARGET_BULLET_WORDS) {
+                return;
+            }
+            pushUniqueBulletToken({
+                token,
+                result,
+                lineWordKeys,
+                usedWordKeys,
+                avoidUsedWords: false,
+            });
+        });
+    });
+
+    let fillerCursor = Number(bulletIndex || 0);
+    while (result.length < TARGET_BULLET_WORDS) {
+        const fallbackToken = BULLET_PROFESSIONAL_VOCABULARY[fillerCursor % BULLET_PROFESSIONAL_VOCABULARY.length] || 'delivery';
+        fillerCursor += 1;
+        const appended = pushUniqueBulletToken({
+            token: fallbackToken,
+            result,
+            lineWordKeys,
+            usedWordKeys,
+            avoidUsedWords: false,
+        });
+
+        if (!appended) {
+            BULLET_ENDING_TOKENS.some((token) =>
+                pushUniqueBulletToken({
+                    token,
+                    result,
+                    lineWordKeys,
+                    usedWordKeys,
+                    avoidUsedWords: false,
+                }),
+            );
+        }
     }
 
-    return finalTokens.slice(0, TARGET_BULLET_WORDS).join(' ');
+    const finalTokens = result.slice(0, TARGET_BULLET_WORDS);
+    const finalWordKeys = new Set(finalTokens.map((token) => toWordKey(token)).filter(Boolean));
+    const endingToken = pickEndingToken(finalWordKeys, usedWordKeys);
+    if (endingToken) {
+        finalTokens[TARGET_BULLET_WORDS - 1] = endingToken;
+    }
+
+    finalTokens.forEach((token) => {
+        const key = toWordKey(token);
+        if (key) {
+            usedWordKeys.add(key);
+        }
+    });
+
+    return ensureSentenceEnding(finalTokens.join(' '));
 };
 
 const normalizeToLines = (value = '') =>
@@ -784,6 +975,51 @@ const normalizeBulletItem = (value = '') =>
         .replace(/\s+/g, ' ')
         .trim();
 
+const normalizeBulletLineKey = (value = '') =>
+    compactToOneLine(value)
+        .toLowerCase()
+        .replace(/[.!?]+$/g, '')
+        .trim();
+
+const buildUniqueBulletLines = ({ lines = [], contextLabel = '', sourceText = '' }) => {
+    const usedWordKeys = new Set();
+    const usedLineKeys = new Set();
+    const safeLines = Array.isArray(lines) ? lines : [];
+    const results = [];
+
+    for (let index = 0; index < safeLines.length; index += 1) {
+        const baseLine = String(safeLines[index] || '').trim();
+        let candidate = enforceBulletWordCount(baseLine, {
+            contextLabel,
+            sourceText,
+            bulletIndex: index,
+            usedWordKeys,
+        });
+
+        let candidateKey = normalizeBulletLineKey(candidate);
+        let retryCount = 0;
+        while (candidateKey && usedLineKeys.has(candidateKey) && retryCount < 4) {
+            candidate = enforceBulletWordCount('', {
+                contextLabel: `${contextLabel} variation ${index + retryCount + 1}`,
+                sourceText: [sourceText, baseLine, BULLET_PROFESSIONAL_VOCABULARY[index + retryCount] || 'delivery'].join(' '),
+                bulletIndex: index + retryCount + 1,
+                usedWordKeys,
+            });
+            candidateKey = normalizeBulletLineKey(candidate);
+            retryCount += 1;
+        }
+
+        if (!candidateKey || usedLineKeys.has(candidateKey)) {
+            continue;
+        }
+
+        usedLineKeys.add(candidateKey);
+        results.push(candidate);
+    }
+
+    return results.slice(0, TARGET_BULLET_LINES);
+};
+
 const buildContextFallbackBullets = (contextLabel = '') => {
     const context = compactToOneLine(contextLabel || '');
     const scopedContext = context ? ` in ${context}` : '';
@@ -799,6 +1035,8 @@ const normalizeBulletList = ({ bullets = [], text = '', fallbackText = '', conte
     const fromArray = ensureArrayOfStrings(bullets).map((item) => normalizeBulletItem(item)).filter(Boolean);
     const fromText = toCandidateDescriptionLines(text);
     const fallbackLines = toCandidateDescriptionLines(fallbackText);
+    const normalizedContextLabel = compactToOneLine(contextLabel || '');
+    const normalizedSourceText = [text, fallbackText, normalizedContextLabel].filter(Boolean).join(' ');
 
     let mergedLines = dedupeLines([...fromArray, ...fromText, ...fallbackLines]).slice(0, TARGET_BULLET_LINES);
 
@@ -812,20 +1050,36 @@ const normalizeBulletList = ({ bullets = [], text = '', fallbackText = '', conte
         mergedLines = dedupeLines([...mergedLines, ...generated]).slice(0, TARGET_BULLET_LINES);
     }
 
-    return fillToFixedLineCount(mergedLines, TARGET_BULLET_LINES, buildContextFallbackBullets(contextLabel), {
+    const fixedLines = fillToFixedLineCount(mergedLines, TARGET_BULLET_LINES, buildContextFallbackBullets(contextLabel), {
         allowVerbRewrites: true,
-    })
-        .map((line) =>
-            enforceBulletWordCount(normalizeBulletItem(line), {
-                contextLabel,
-                sourceText: [text, fallbackText].filter(Boolean).join(' '),
-            }),
-        );
+    });
+
+    return buildUniqueBulletLines({
+        lines: fixedLines.map((line) => normalizeBulletItem(line)),
+        contextLabel: normalizedContextLabel,
+        sourceText: normalizedSourceText,
+    });
 };
 
-const normalizeWorkExperienceSection = ({ payloadItems, sourceItems }) => {
+const buildSectionContextLabel = ({ profession = '', sectionLabel = '', primaryLabel = '', secondaryLabel = '' }) =>
+    [profession, sectionLabel, primaryLabel, secondaryLabel]
+        .map((item) => compactToOneLine(item))
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+
+const deriveProfessionFromSourceItems = (sourceItems = []) => {
+    const firstRole = (Array.isArray(sourceItems) ? sourceItems : [])
+        .map((item) => compactToOneLine(item?.role || ''))
+        .find(Boolean);
+
+    return firstRole || 'Technology Professional';
+};
+
+const normalizeWorkExperienceSection = ({ payloadItems, sourceItems, profession = '' }) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
     const safeSourceItems = Array.isArray(sourceItems) ? sourceItems : [];
+    const effectiveProfession = compactToOneLine(profession) || deriveProfessionFromSourceItems(safeSourceItems);
 
     return safeSourceItems
         .slice(0, 30)
@@ -839,16 +1093,22 @@ const normalizeWorkExperienceSection = ({ payloadItems, sourceItems }) => {
                     bullets: safePayload.bullets,
                     text: safePayload.improvedDescription || safePayload.description || '',
                     fallbackText: sourceItem.description || '',
-                    contextLabel: [safePayload.role || sourceItem.role, safePayload.company || sourceItem.company].filter(Boolean).join(' at '),
+                    contextLabel: buildSectionContextLabel({
+                        profession: effectiveProfession,
+                        sectionLabel: 'work experience',
+                        primaryLabel: safePayload.role || sourceItem.role || '',
+                        secondaryLabel: safePayload.company || sourceItem.company || '',
+                    }),
                 }),
             };
         })
         .filter((item) => hasAnyText(item.company, item.role, ...item.bullets));
 };
 
-const normalizeProjectsSection = ({ payloadItems, sourceItems }) => {
+const normalizeProjectsSection = ({ payloadItems, sourceItems, profession = '' }) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
     const safeSourceItems = Array.isArray(sourceItems) ? sourceItems : [];
+    const effectiveProfession = compactToOneLine(profession) || 'Technology Professional';
 
     return safeSourceItems
         .slice(0, 30)
@@ -862,16 +1122,22 @@ const normalizeProjectsSection = ({ payloadItems, sourceItems }) => {
                     bullets: safePayload.bullets,
                     text: safePayload.improvedDescription || safePayload.description || '',
                     fallbackText: sourceItem.description || '',
-                    contextLabel: title || sourceItem.name || 'project delivery',
+                    contextLabel: buildSectionContextLabel({
+                        profession: effectiveProfession,
+                        sectionLabel: 'project',
+                        primaryLabel: title || sourceItem.name || 'delivery',
+                        secondaryLabel: sourceItem.techStack || '',
+                    }),
                 }),
             };
         })
         .filter((item) => hasAnyText(item.title, ...item.bullets));
 };
 
-const normalizeInternshipsSection = ({ payloadItems, sourceItems }) => {
+const normalizeInternshipsSection = ({ payloadItems, sourceItems, profession = '' }) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
     const safeSourceItems = Array.isArray(sourceItems) ? sourceItems : [];
+    const effectiveProfession = compactToOneLine(profession) || deriveProfessionFromSourceItems(safeSourceItems);
 
     return safeSourceItems
         .slice(0, 30)
@@ -884,7 +1150,12 @@ const normalizeInternshipsSection = ({ payloadItems, sourceItems }) => {
                     bullets: safePayload.bullets,
                     text: safePayload.improvedDescription || safePayload.description || '',
                     fallbackText: sourceItem.description || '',
-                    contextLabel: [safePayload.role || sourceItem.role, safePayload.company || sourceItem.company].filter(Boolean).join(' at '),
+                    contextLabel: buildSectionContextLabel({
+                        profession: effectiveProfession,
+                        sectionLabel: 'internship',
+                        primaryLabel: safePayload.role || sourceItem.role || '',
+                        secondaryLabel: safePayload.company || sourceItem.company || '',
+                    }),
                 }),
             };
         })
@@ -1070,19 +1341,27 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
         }
     }
 
+    const profession =
+        deriveProfessionalTitle(resumeData) ||
+        compactToOneLine(resumeData?.personalDetails?.title || '') ||
+        'Technology Professional';
+
     return {
         summary: normalizeSummary(safePayload.summary, resumeData),
         workExperience: normalizeWorkExperienceSection({
             payloadItems: safePayload.workExperience,
             sourceItems: resumeData.workExperience,
+            profession,
         }),
         projects: normalizeProjectsSection({
             payloadItems: safePayload.projects,
             sourceItems: resumeData.projects,
+            profession,
         }),
         internships: normalizeInternshipsSection({
             payloadItems: safePayload.internships,
             sourceItems: resumeData.internships,
+            profession,
         }),
         skills: Array.isArray(resumeData.skills) && resumeData.skills.length ? normalizeSkills(safePayload.skills, resumeData.skills) : [],
         certifications:
@@ -1188,10 +1467,11 @@ SUMMARY RULES (STRICT):
 
 BULLET RULES (STRICT):
 1. For each work experience, project, and internship item return exactly 3 bullets.
-2. Each bullet must contain exactly 15 words.
+2. Each bullet must contain exactly 14 words.
 3. Each bullet must start with a strong action verb.
-4. Keep each bullet compact for single-line A4 rendering.
-5. Include technology, task, and result naturally without fabrication.
+4. Keep each bullet line unique and avoid repeated wording across bullets of the same item.
+5. Keep each bullet compact for single-line A4 rendering with clean grammar and professional vocabulary.
+6. Include technology, task, and result naturally without fabrication.
 
 SKILLS RULES:
 1. Keep only relevant technical skills.
@@ -1224,19 +1504,19 @@ Return JSON in this exact schema:
     {
       "company": "string",
       "role": "string",
-      "bullets": ["15 words exactly"]
+      "bullets": ["14 words exactly"]
     }
   ],
   "projects": [
     {
       "title": "string",
-      "bullets": ["15 words exactly"]
+      "bullets": ["14 words exactly"]
     }
   ],
   "internships": [
     {
       "company": "string",
-      "bullets": ["15 words exactly"]
+      "bullets": ["14 words exactly"]
     }
   ],
   "skills": ["string"],
@@ -1292,6 +1572,7 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {} }) => {
     const resumeSearchText = buildResumeSearchText(resumeData);
     const missingKeywords = filterTermsNotInResume([safeContext.missingKeywords], resumeSearchText, 25);
     const missingSkills = filterTermsNotInResume([safeContext.missingSkills], resumeSearchText, 20);
+    const profession = deriveProfessionalTitle(resumeData);
 
     const whyScoreIsLower = [];
     if (missingKeywords.length) {
@@ -1318,7 +1599,12 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {} }) => {
             bullets: normalizeBulletList({
                 text: item?.description || '',
                 fallbackText: item?.description || '',
-                contextLabel: [item?.role, item?.company].filter(Boolean).join(' at '),
+                contextLabel: buildSectionContextLabel({
+                    profession,
+                    sectionLabel: 'work experience',
+                    primaryLabel: item?.role || '',
+                    secondaryLabel: item?.company || '',
+                }),
             }),
         })),
         projects: (Array.isArray(resumeData.projects) ? resumeData.projects : []).map((item) => ({
@@ -1326,7 +1612,12 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {} }) => {
             bullets: normalizeBulletList({
                 text: item?.description || '',
                 fallbackText: item?.description || '',
-                contextLabel: item?.name || item?.title || 'project delivery',
+                contextLabel: buildSectionContextLabel({
+                    profession,
+                    sectionLabel: 'project',
+                    primaryLabel: item?.name || item?.title || 'delivery',
+                    secondaryLabel: item?.techStack || '',
+                }),
             }),
         })),
         internships: (Array.isArray(resumeData.internships) ? resumeData.internships : []).map((item) => ({
@@ -1334,7 +1625,12 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {} }) => {
             bullets: normalizeBulletList({
                 text: item?.description || '',
                 fallbackText: item?.description || '',
-                contextLabel: [item?.role, item?.company].filter(Boolean).join(' at '),
+                contextLabel: buildSectionContextLabel({
+                    profession,
+                    sectionLabel: 'internship',
+                    primaryLabel: item?.role || '',
+                    secondaryLabel: item?.company || '',
+                }),
             }),
         })),
         skills: normalizeSkills(resumeData.skills),
