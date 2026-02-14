@@ -221,7 +221,7 @@ function ATSResults() {
     return (
         <div className="min-h-screen overflow-x-hidden bg-[#f1f2f4] text-[#2e2e2e]">
             <Navbar />
-            <main className="mx-auto w-full max-w-6xl space-y-6 px-3 py-5 sm:px-6 lg:px-8">
+            <main className="mx-auto w-full max-w-6xl space-y-6 px-3 py-5 max-[350px]:space-y-5 max-[350px]:px-2 sm:px-6 lg:px-8">
                 <section className="border-b border-[#d5d9e1] pb-4 sm:pb-5">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -275,7 +275,7 @@ function ATSResults() {
 
                 {ats.status === 'succeeded' ? (
                     <>
-                        <section className="grid gap-5 border-b border-[#d5d9e1] pb-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+                        <section className="grid gap-5 border-b border-[#d5d9e1] pb-6 max-[350px]:gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
                             <article className="min-w-0">
                                 <h3 className="font-ui-heading text-[1.25rem] font-bold text-[#111111]">ATS Score</h3>
                                 <div className="mt-3 flex justify-center lg:justify-start">
@@ -322,11 +322,11 @@ function ATSResults() {
                                     Skills missing or weak in your resume for ATS matching.
                                 </p>
                                 {missingSkills.length ? (
-                                    <div className="mt-3 flex flex-wrap gap-2">
+                                    <div className="mt-3 flex flex-wrap gap-2 max-[350px]:gap-1.5">
                                         {missingSkills.map((item, index) => (
                                             <span
                                                 key={`ats-missing-skill-${item}-${index}`}
-                                                className="max-w-full rounded-full bg-[#ffe7bf] px-3 py-1 text-xs font-medium text-[#8a5600] break-all"
+                                                className="max-w-full break-all rounded-full bg-[#ffe7bf] px-3 py-1 text-xs font-medium text-[#8a5600] max-[350px]:px-2 max-[350px]:text-[11px]"
                                             >
                                                 {item}
                                             </span>
@@ -341,11 +341,11 @@ function ATSResults() {
                                     Non-skill ATS keywords from the job description that are missing in your resume content.
                                 </p>
                                 {missingKeywords.length ? (
-                                    <div className="mt-3 flex flex-wrap gap-2">
+                                    <div className="mt-3 flex flex-wrap gap-2 max-[350px]:gap-1.5">
                                         {missingKeywords.map((item, index) => (
                                             <span
                                                 key={`ats-missing-keyword-${item}-${index}`}
-                                                className="max-w-full rounded-full bg-[#fbe7ff] px-3 py-1 text-xs font-medium text-[#8a2c8f] break-all"
+                                                className="max-w-full break-all rounded-full bg-[#fbe7ff] px-3 py-1 text-xs font-medium text-[#8a2c8f] max-[350px]:px-2 max-[350px]:text-[11px]"
                                             >
                                                 {item}
                                             </span>
@@ -357,7 +357,7 @@ function ATSResults() {
                             </article>
                         </section>
 
-                        <section className="border-b border-[#d5d9e1] pb-6">
+                        <section className="min-w-0 border-b border-[#d5d9e1] pb-6">
                             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                                 <div className="min-w-0">
                                     <h3 className="font-ui-heading text-[1.25rem] font-bold text-[#111111]">Get AI Improvements</h3>
@@ -365,7 +365,12 @@ function ATSResults() {
                                         AI reviews your resume content and returns missing keywords, weak areas, and recommendations.
                                     </p>
                                 </div>
-                                <Button onClick={handleFetchAI} loading={ai.status === 'loading'} size="sm" className="w-full sm:w-auto">
+                                <Button
+                                    onClick={handleFetchAI}
+                                    loading={ai.status === 'loading'}
+                                    size="sm"
+                                    className="w-full max-[350px]:h-9 max-[350px]:text-xs sm:w-auto"
+                                >
                                     Get AI Improvements
                                 </Button>
                             </div>
@@ -399,12 +404,13 @@ function ATSResults() {
                                 </div>
                             ) : null}
 
-                            <div className="mt-5">
+                            <div className="mt-5 min-w-0 max-w-full overflow-x-hidden">
                                 <AISuggestions
                                     suggestions={ai.suggestions}
                                     improvedResume={ai.improvedResume}
                                     status={ai.status === 'loading' ? 'idle' : ai.status}
                                     error={ai.error}
+                                    className="max-w-full"
                                 />
                             </div>
                         </section>
