@@ -96,7 +96,7 @@ function TemplateSeven({ resumeData, formData }) {
                     ) : null}
                 </section>
 
-                <section className="grid grid-cols-2 gap-2">
+                <section className="grid grid-cols-3 gap-2">
                     {data.certifications.length > 0 ? (
                         <div className="space-y-1">
                             <h2 className="border-b border-gray-300 bg-gray-100 px-1 py-0.5 text-xs font-bold uppercase tracking-wide">Certifications</h2>
@@ -117,6 +117,16 @@ function TemplateSeven({ resumeData, formData }) {
                             </ul>
                         </div>
                     ) : null}
+                    {data.hobbies.length > 0 ? (
+                        <div className="space-y-1">
+                            <h2 className="border-b border-gray-300 bg-gray-100 px-1 py-0.5 text-xs font-bold uppercase tracking-wide">Hobbies</h2>
+                            <ul className="list-disc space-y-1 pl-4 text-sm">
+                                {data.hobbies.map((item) => (
+                                    <li key={item} className="break-words">{item}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : null}
                 </section>
             </div>
         </div>
@@ -124,7 +134,6 @@ function TemplateSeven({ resumeData, formData }) {
 }
 
 export default React.memo(TemplateSeven);
-
 
 
 
