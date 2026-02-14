@@ -26,7 +26,7 @@ function TemplateTwo({ resumeData, formData }) {
                                 <h2 className="text-xs font-bold uppercase tracking-wide">Summary</h2>
                                 <hr className="mt-1 border-t border-gray-300" />
                             </div>
-                            <p className="whitespace-pre-line text-sm">{data.personalDetails.summary}</p>
+                            <p className="resume-summary-paragraph text-sm">{data.personalDetails.summary}</p>
                         </section>
                     ) : null}
 
@@ -120,7 +120,7 @@ function TemplateTwo({ resumeData, formData }) {
                                         <p className="shrink-0 whitespace-nowrap text-right text-xs empty:hidden">{formatDateRange(item.startDate, item.endDate)}</p>
                                     </div>
                                     <ul className="list-disc space-y-1 pl-4 text-sm marker:text-[0.72em] marker:text-black">
-                                        {toBullets(item.description).map((line, lineIndex) => (
+                                        {toBullets(item.description, [], { maxLines: item.bulletMaxLines || 3 }).map((line, lineIndex) => (
                                             <li key={`${item.company}-${lineIndex}`} className="break-words">{line}</li>
                                         ))}
                                     </ul>
@@ -139,7 +139,7 @@ function TemplateTwo({ resumeData, formData }) {
                                     </p>
                                     <p className="break-all text-xs">{item.link}</p>
                                     <ul className="list-disc space-y-1 pl-4 text-sm marker:text-[0.72em] marker:text-black">
-                                        {toBullets(item.description).map((line, lineIndex) => (
+                                        {toBullets(item.description, [], { maxLines: item.bulletMaxLines || 3 }).map((line, lineIndex) => (
                                             <li key={`${item.name}-${lineIndex}`} className="break-words">{line}</li>
                                         ))}
                                     </ul>
@@ -154,6 +154,7 @@ function TemplateTwo({ resumeData, formData }) {
 }
 
 export default React.memo(TemplateTwo);
+
 
 
 
