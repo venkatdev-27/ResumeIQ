@@ -122,6 +122,12 @@ const ATS_SKILL_NORMALIZATION_MAP = new Map([
     ['java script', 'JavaScript'],
     ['ts', 'TypeScript'],
     ['typescript', 'TypeScript'],
+    ['aws', 'AWS'],
+    ['azure', 'Azure'],
+    ['gcp', 'GCP'],
+    ['sql', 'SQL'],
+    ['html', 'HTML'],
+    ['css', 'CSS'],
 ]);
 
 const normalizeSkillKey = (value = '') =>
@@ -131,6 +137,40 @@ const normalizeSkillKey = (value = '') =>
         .replace(/[^a-z0-9+\s]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
+
+const SKILL_MATCH_VARIANTS = new Map([
+    ['reactjs', ['reactjs', 'react js', 'react']],
+    ['nodejs', ['nodejs', 'node js', 'node']],
+    ['expressjs', ['expressjs', 'express js', 'express']],
+    ['mongodb', ['mongodb', 'mongo db', 'mongo']],
+    ['javascript', ['javascript', 'java script', 'js']],
+    ['typescript', ['typescript', 'type script', 'ts']],
+    ['artificial intelligence', ['artificial intelligence', 'ai']],
+    ['machine learning', ['machine learning', 'ml']],
+    ['deep learning', ['deep learning', 'dl']],
+    ['natural language processing', ['natural language processing', 'nlp']],
+]);
+
+const splitSkillCandidates = (value = '') =>
+    String(value || '')
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .split(/[,;\n|]+/g)
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+const toSkillSourceArray = (source) => {
+    if (Array.isArray(source)) {
+        return source;
+    }
+    if (typeof source === 'string') {
+        return [source];
+    }
+    return [];
+};
+
+const toSkillMatchKey = (value = '') =>
+    normalizeSkillKey(value).replace(/\s+/g, '');
 
 const toTitleCase = (value = '') =>
     compactToOneLine(value)
@@ -171,12 +211,14 @@ const normalizeAtsSkillName = (value = '') => {
 
 const normalizeSkills = (...sources) => {
     const seen = new Set();
-    const merged = sources.flatMap((source) => ensureArrayOfStrings(source));
+    const merged = sources.flatMap((source) =>
+        ensureArrayOfStrings(toSkillSourceArray(source)).flatMap((item) => splitSkillCandidates(item)),
+    );
 
     return merged
         .map((skill) => normalizeAtsSkillName(skill))
         .filter((skill) => {
-            const key = String(skill || '').trim().toLowerCase();
+            const key = toSkillMatchKey(skill);
             if (!key || seen.has(key)) {
                 return false;
             }
@@ -1278,25 +1320,66 @@ const buildResumeSearchText = (resumeData = {}) => {
 
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const containsTermInResume = (resumeText = '', term = '') => {
-    const normalizedText = String(resumeText || '').toLowerCase();
-    const normalizedTerm = String(term || '').toLowerCase().trim();
+const normalizeSearchText = (value = '') =>
+    String(value || '')
+        .toLowerCase()
+        .replace(/[._/\\-]+/g, ' ')
+        .replace(/[^a-z0-9+\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 
-    if (!normalizedText || !normalizedTerm) {
+const getSkillSearchVariants = (term = '') => {
+    const normalizedTerm = normalizeSkillKey(term);
+    const canonical = normalizeSkillKey(normalizeAtsSkillName(term));
+    const base = canonical || normalizedTerm;
+    const variants = SKILL_MATCH_VARIANTS.get(base) || [base, normalizedTerm];
+
+    return [...new Set(
+        variants
+            .map((variant) => normalizeSkillKey(variant))
+            .filter(Boolean),
+    )];
+};
+
+const containsTermInResume = (resumeText = '', term = '') => {
+    const normalizedText = normalizeSearchText(resumeText);
+    const collapsedText = normalizedText.replace(/\s+/g, '');
+    const variants = getSkillSearchVariants(term);
+
+    if (!normalizedText || !variants.length) {
         return false;
     }
 
-    if (normalizedTerm.includes(' ')) {
-        return normalizedText.includes(normalizedTerm);
-    }
+    return variants.some((variant) => {
+        if (!variant) {
+            return false;
+        }
 
-    return new RegExp(`\\b${escapeRegExp(normalizedTerm)}\\b`, 'i').test(normalizedText);
+        const collapsedVariant = variant.replace(/\s+/g, '');
+        if (collapsedVariant && collapsedText.includes(collapsedVariant)) {
+            return true;
+        }
+
+        const escapedVariant = escapeRegExp(variant);
+        const matcher = variant.includes(' ')
+            ? new RegExp(`(?:^|\\s)${escapedVariant}(?=\\s|$)`, 'i')
+            : new RegExp(`\\b${escapedVariant}\\b`, 'i');
+
+        return matcher.test(normalizedText);
+    });
 };
 
 const filterTermsNotInResume = (termSources = [], resumeText = '', max = 20) =>
     normalizeSkills(...(Array.isArray(termSources) ? termSources : [termSources]))
         .filter((term) => !containsTermInResume(resumeText, term))
         .slice(0, max);
+
+const buildSkillKeySet = (skills = []) =>
+    new Set(
+        normalizeSkills(skills)
+            .map((skill) => toSkillMatchKey(skill))
+            .filter(Boolean),
+    );
 
 const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext = {}) => {
     const safePayload = ensureObject(payload);
@@ -1313,6 +1396,20 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
         resumeSearchText,
         20,
     );
+    const resumeSkillKeySet = buildSkillKeySet(resumeData.skills);
+    const optimizedSkillCandidates = normalizeSkills(
+        safePayload.skills,
+        safeAtsFeedback.missingSkills,
+        safePayload.missingSkills,
+        normalizedContext.missingSkills,
+        aiMissingSkills,
+    );
+    const optimizedSkills = optimizedSkillCandidates
+        .filter((skill) => {
+            const key = toSkillMatchKey(skill);
+            return Boolean(key) && !resumeSkillKeySet.has(key);
+        })
+        .slice(0, 20);
     const whyScoreIsLower = ensureArrayOfStrings(
         safeAtsFeedback.whyScoreIsLower || safeAtsFeedback.scoreGaps || safePayload.whyScoreIsLower,
     ).slice(0, 8);
@@ -1363,7 +1460,7 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
             sourceItems: resumeData.internships,
             profession,
         }),
-        skills: Array.isArray(resumeData.skills) && resumeData.skills.length ? normalizeSkills(safePayload.skills, resumeData.skills) : [],
+        skills: optimizedSkills,
         certifications:
             Array.isArray(resumeData.certifications) && resumeData.certifications.length
                 ? normalizeOneLineList(
@@ -1474,7 +1571,7 @@ BULLET RULES (STRICT):
 6. Include technology, task, and result naturally without fabrication.
 
 SKILLS RULES:
-1. Keep only relevant technical skills.
+1. Keep only relevant technical skills missing or weak in the current resume.
 2. Use ATS-friendly grouping language.
 3. Normalize names: React => ReactJS, Node => NodeJS, Mongo => MongoDB, JS => JavaScript.
 
