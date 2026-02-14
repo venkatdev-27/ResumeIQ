@@ -34,6 +34,7 @@ export const ROUTES = {
     resumePreview: '/resume-preview',
     atsScanner: '/ats-scanner',
     atsResults: '/ats-results',
+    atsImprovements: '/ats-improvements',
 };
 
 export const TEMPLATE_TYPES = {
