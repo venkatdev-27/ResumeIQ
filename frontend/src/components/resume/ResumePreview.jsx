@@ -82,7 +82,10 @@ const applyVisibilityMask = (previewData = {}, maskSource = {}) => {
             email: mask.personalDetails.email ? String(previewPersonal.email || '').trim() : '',
             phone: mask.personalDetails.phone ? String(previewPersonal.phone || '').trim() : '',
             location: mask.personalDetails.location ? String(previewPersonal.location || '').trim() : '',
-            summary: mask.personalDetails.summary ? String(previewPersonal.summary || '').trim() : '',
+            summary:
+                mask.personalDetails.summary || hasText(previewPersonal.summary)
+                    ? String(previewPersonal.summary || '').trim()
+                    : '',
             linkedin: mask.personalDetails.linkedin ? String(previewPersonal.linkedin || '').trim() : '',
             website: mask.personalDetails.website ? String(previewPersonal.website || '').trim() : '',
             photo: mask.personalDetails.photo ? String(previewPersonal.photo || '').trim() : '',
