@@ -16,10 +16,19 @@ function TagListSection({
 
     const updateValue = (event) => {
         const parsed = event.target.value
-            .split(',')
+            .split(/[\n,]+/g)
             .map((item) => item.trim())
             .filter(Boolean);
-        onChange(parsed);
+        const seen = new Set();
+        const deduped = parsed.filter((item) => {
+            const key = item.toLowerCase();
+            if (seen.has(key)) {
+                return false;
+            }
+            seen.add(key);
+            return true;
+        });
+        onChange(deduped);
     };
 
     const enhancedPlaceholder = placeholder || 'Add comma-separated items here';
