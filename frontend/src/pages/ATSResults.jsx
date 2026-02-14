@@ -88,7 +88,7 @@ function ATSResults() {
 
         hasRequestedRef.current = true;
         dispatch(clearAISuggestions());
-        dispatch(fetchATSScore());
+        dispatch(fetchATSScore({ jobDescription }));
     }, [dispatch, hasResumeContent, runAtsOnMount, ats.status]);
 
     React.useEffect(() => {
@@ -175,7 +175,7 @@ function ATSResults() {
 
     const handleRunATSAgain = async () => {
         dispatch(clearAISuggestions());
-        await dispatch(fetchATSScore());
+        await dispatch(fetchATSScore({ jobDescription }));
     };
 
     const handleFetchAI = async () => {
@@ -357,7 +357,7 @@ function ATSResults() {
                                     <Progress value={aiLoadingProgress} className="w-full space-y-2">
                                         <div className="flex items-start justify-between gap-2">
                                             <ProgressLabel className="min-w-0 break-words text-xs sm:text-sm">
-                                                Gemini AI is generating improvements
+                                                AI is generating improvements
                                             </ProgressLabel>
                                             <span className="text-sm text-[#4b4b53]">
                                                 <ProgressValue /> %
