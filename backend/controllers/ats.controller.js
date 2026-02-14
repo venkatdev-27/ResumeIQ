@@ -44,7 +44,12 @@ const getScore = asyncHandler(async (req, res) => {
         throw new AppError('Unauthorized user context.', 401);
     }
 
-    const { resumeText, resumeId } = req.body;
+    const {
+        resumeText,
+        resumeId,
+        userSkills = '',
+        jobDescription = '',
+    } = req.body;
     const context = await resolveResumeContext({
         userId,
         resumeText,
@@ -54,6 +59,8 @@ const getScore = asyncHandler(async (req, res) => {
     const atsResult = await calculateAtsScore({
         resumeText: context.text,
         resumeData: context.resumeData,
+        userSkills,
+        jobDescription,
     });
 
     return sendSuccess(res, atsResult, 'ATS score calculated successfully', 200);
