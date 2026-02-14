@@ -1,11 +1,11 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Github, Linkedin, Mail } from 'lucide-react';
+import { Github, Linkedin, Mail, Phone } from 'lucide-react';
 
 const quickLinks = [
     { label: 'Home', to: '/' },
     { label: 'Services', to: '/?section=services' },
-    { label: 'Contact', to: '/?section=contact' },
+    { label: 'Templates', to: '/templates' },
 ];
 
 const resources = ['ATS Tips', 'Resume Templates', 'Career Blog', 'Interview Prep'];
@@ -13,19 +13,16 @@ const socialLinks = [
     {
         label: 'Email',
         href: 'mailto:kosurivenky50@gmail.com',
-        display: 'kosurivenky50@gmail.com',
         Icon: Mail,
     },
     {
         label: 'GitHub',
         href: 'https://github.com/venkatdev-27/ResumeIQ',
-        display: 'github.com/venkatdev-27/ResumeIQ',
         Icon: Github,
     },
     {
         label: 'LinkedIn',
         href: 'https://linkedin.com/in/venkat18',
-        display: 'linkedin.com/in/venkat18',
         Icon: Linkedin,
     },
 ];
@@ -63,19 +60,28 @@ function Footer() {
                             </li>
                         ))}
                     </ul>
-                    <div className="font-ui-body mt-5 space-y-2 text-sm text-muted-foreground">
-                        {socialLinks.map(({ label, href, display, Icon }) => (
-                            <a
-                                key={label}
-                                href={href}
-                                target={label === 'Email' ? undefined : '_blank'}
-                                rel={label === 'Email' ? undefined : 'noreferrer'}
-                                className="group inline-flex w-full min-w-0 items-center gap-2 break-all transition hover:text-primary"
-                            >
-                                <Icon className="h-4 w-4 shrink-0" />
-                                <span className="min-w-0">{display}</span>
-                            </a>
-                        ))}
+                    <div className="mt-5">
+                        <div className="flex items-center gap-3">
+                            {socialLinks.map(({ label, href, Icon }) => (
+                                <a
+                                    key={label}
+                                    href={href}
+                                    target={label === 'Email' ? undefined : '_blank'}
+                                    rel={label === 'Email' ? undefined : 'noreferrer'}
+                                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#cfd7e6] bg-white text-[#3d4b6d] transition hover:border-[#375cf6] hover:text-[#375cf6]"
+                                    aria-label={label}
+                                >
+                                    <Icon className="h-4.5 w-4.5" />
+                                </a>
+                            ))}
+                        </div>
+                        <a
+                            href="tel:7013269473"
+                            className="font-ui-body mt-4 inline-flex items-center gap-2 text-sm text-muted-foreground transition hover:text-primary"
+                        >
+                            <Phone className="h-4 w-4" />
+                            <span>7013269473</span>
+                        </a>
                     </div>
                 </div>
             </div>
