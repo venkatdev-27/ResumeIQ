@@ -1,26 +1,10 @@
-const { GoogleGenAI } = require("@google/genai");
 const { AppError } = require('../utils/response');
+const { requestChatCompletion } = require('./aiClient.service');
 
-let aiClient = null;
+const MAX_AI_PAYLOAD_CHARS = 12_000;
 
 const truncateText = (value = '', max = 1200) => String(value || '').trim().slice(0, max);
-
-const getGeminiClient = () => {
-    if (!process.env.GEMINI_API_KEY) {
-        throw new AppError('Gemini API key is not configured.', 500);
-    }
-
-    if (!aiClient) {
-        try {
-            aiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        } catch (error) {
-            console.error('Failed to initialize Gemini Client:', error);
-            throw new AppError('Failed to initialize AI service.', 500);
-        }
-    }
-
-    return aiClient;
-};
+const toSafeAiJson = (data, maxChars = MAX_AI_PAYLOAD_CHARS) => JSON.stringify(data ?? '').slice(0, maxChars);
 
 const ensureArrayOfStrings = (value) =>
     Array.isArray(value)
@@ -48,18 +32,6 @@ const normalizeSkills = (...sources) => {
             return true;
         })
         .slice(0, 20);
-};
-
-const normalizeEntry = (entry, mapping, fallbackEntry = {}) => {
-    const safeEntry = ensureObject(entry);
-    const safeFallback = ensureObject(fallbackEntry);
-    const normalized = {};
-
-    Object.entries(mapping).forEach(([sourceKey, targetKey]) => {
-        normalized[targetKey] = String(safeEntry[sourceKey] || safeFallback[sourceKey] || '').trim();
-    });
-
-    return normalized;
 };
 
 const normalizeLineBreaks = (value = '') =>
@@ -489,22 +461,18 @@ const extractJsonCandidate = (text) => {
     return tryParseJson(cleaned.slice(firstBrace, lastBrace + 1));
 };
 
-const extractTextFromGeminiResponse = (response) => {
-    if (typeof response?.text === 'string' && response.text.trim()) {
-        return response.text.trim();
-    }
 
-    const textFromParts = response?.candidates?.[0]?.content?.parts
-        ?.map((part) => part?.text || '')
-        .join('')
-        .trim();
 
-    return textFromParts || '';
-};
 
 const buildResumeImprovePrompt = ({ resumeData, feedbackContext }) => {
     const targetRole = String(resumeData?.personalDetails?.title || '').trim();
     const safeContext = normalizeFeedbackContext(feedbackContext);
+    const resumeDataPreview = toSafeAiJson(resumeData, 10_000);
+    const jobDescriptionPreview = toSafeAiJson(safeContext.jobDescription, 2_000);
+    const atsScorePreview = toSafeAiJson(safeContext.atsScore, 200);
+    const matchedKeywordsPreview = toSafeAiJson(safeContext.matchedKeywords, 1_500);
+    const missingKeywordsPreview = toSafeAiJson(safeContext.missingKeywords, 1_500);
+    const missingSkillsPreview = toSafeAiJson(safeContext.missingSkills, 1_500);
 
     return `You are a senior professional resume writing expert.
 
@@ -533,13 +501,13 @@ Rules:
 20. Keep feedback specific and concise (no generic filler).
 
 Input:
-resumeData: ${JSON.stringify(resumeData)}
+resumeData: ${resumeDataPreview}
 targetRole: ${targetRole || 'Not specified'}
-jobDescription: ${JSON.stringify(safeContext.jobDescription)}
-currentAtsScore: ${JSON.stringify(safeContext.atsScore)}
-matchedKeywords: ${JSON.stringify(safeContext.matchedKeywords)}
-knownMissingKeywords: ${JSON.stringify(safeContext.missingKeywords)}
-knownMissingSkills: ${JSON.stringify(safeContext.missingSkills)}
+jobDescription: ${jobDescriptionPreview}
+currentAtsScore: ${atsScorePreview}
+matchedKeywords: ${matchedKeywordsPreview}
+knownMissingKeywords: ${missingKeywordsPreview}
+knownMissingSkills: ${missingSkillsPreview}
 
 Return JSON in this exact schema:
 {
@@ -576,11 +544,11 @@ Return JSON in this exact schema:
 }`;
 };
 
-const parseGeminiJsonResponse = (rawText, resumeData = {}, feedbackContext = {}) => {
+const parseAIJsonResponse = (rawText, resumeData = {}, feedbackContext = {}) => {
     const parsed = extractJsonCandidate(rawText);
 
     if (!parsed) {
-        throw new AppError('Unable to parse JSON from Gemini response.', 502, {
+        throw new AppError('Unable to parse JSON from AI response.', 502, {
             rawPreview: String(rawText || '').slice(0, 600),
         });
     }
@@ -594,7 +562,85 @@ const parseGeminiJsonResponse = (rawText, resumeData = {}, feedbackContext = {})
     return normalized;
 };
 
-const improveResumeWithGemini = async ({
+const buildFallbackSummary = (resumeData = {}) => {
+    const summary = normalizeSummary(resumeData?.personalDetails?.summary || '', resumeData);
+    if (summary) {
+        return summary;
+    }
+
+    const fallbackLines = buildSummaryFallbackLines(resumeData);
+    if (fallbackLines.length) {
+        return fallbackLines.join('\n');
+    }
+
+    const title = String(resumeData?.personalDetails?.title || '').trim();
+    const skills = normalizeSkills(resumeData?.skills).slice(0, 4);
+
+    if (title && skills.length) {
+        return `${title} with practical experience in ${skills.join(', ')}.`;
+    }
+    if (title) {
+        return `${title} with practical project and work experience.`;
+    }
+    if (skills.length) {
+        return `Professional with practical experience in ${skills.join(', ')}.`;
+    }
+
+    return 'Professional candidate with practical project and work experience.';
+};
+
+const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {} }) => {
+    const safeContext = normalizeFeedbackContext(feedbackContext);
+    const resumeSearchText = buildResumeSearchText(resumeData);
+    const missingKeywords = filterTermsNotInResume([safeContext.missingKeywords], resumeSearchText, 25);
+    const missingSkills = filterTermsNotInResume([safeContext.missingSkills], resumeSearchText, 20);
+
+    const whyScoreIsLower = [];
+    if (missingKeywords.length) {
+        whyScoreIsLower.push('Important target keywords are underrepresented in summary and experience content.');
+    }
+    if (missingSkills.length) {
+        whyScoreIsLower.push('Some required technical skills are missing in the dedicated skills section.');
+    }
+    if (!whyScoreIsLower.length) {
+        whyScoreIsLower.push('Bullet points can be more outcome-focused and ATS-aligned.');
+    }
+
+    const improvementSteps = [
+        'Add missing keywords naturally in summary, experience, and project bullets.',
+        'Use action-first bullet points and include measurable outcomes where available.',
+        'Align skills section terms with tools and technologies already used in your work history.',
+    ];
+
+    return {
+        summary: buildFallbackSummary(resumeData),
+        workExperience: (Array.isArray(resumeData.workExperience) ? resumeData.workExperience : []).map((item) => ({
+            company: String(item?.company || '').trim(),
+            role: String(item?.role || '').trim(),
+            bullets: toCandidateDescriptionLines(item?.description || '').slice(0, 4),
+        })),
+        projects: (Array.isArray(resumeData.projects) ? resumeData.projects : []).map((item) => ({
+            title: String(item?.name || item?.title || '').trim(),
+            bullets: toCandidateDescriptionLines(item?.description || '').slice(0, 4),
+        })),
+        internships: (Array.isArray(resumeData.internships) ? resumeData.internships : []).map((item) => ({
+            company: String(item?.company || '').trim(),
+            bullets: toCandidateDescriptionLines(item?.description || '').slice(0, 4),
+        })),
+        skills: normalizeSkills(resumeData.skills),
+        achievements: ensureArrayOfStrings(resumeData.achievements).slice(0, 20),
+        hobbies: ensureArrayOfStrings(resumeData.hobbies).slice(0, 20),
+        atsFeedback: {
+            currentScore: String(safeContext.atsScore || '').trim(),
+            whyScoreIsLower,
+            missingKeywords,
+            missingSkills,
+            improvementSteps,
+        },
+    };
+};
+
+const improveResumeWithAI = async ({
     resumeData,
     jobDescription = '',
     atsScore = '',
@@ -602,7 +648,9 @@ const improveResumeWithGemini = async ({
     missingKeywords = [],
     missingSkills = [],
 }) => {
+
     const normalizedResumeData = sanitizeResumeDataForPrompt(resumeData);
+
     const feedbackContext = normalizeFeedbackContext({
         jobDescription,
         atsScore,
@@ -610,40 +658,37 @@ const improveResumeWithGemini = async ({
         missingKeywords,
         missingSkills,
     });
+
     const prompt = buildResumeImprovePrompt({
         resumeData: normalizedResumeData,
         feedbackContext,
     });
 
-    const ai = getGeminiClient();
-    let responseResult;
-
     try {
-        responseResult = await ai.models.generateContent({
-            model: process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite',
-            contents: prompt,
-            config: {
-                responseMimeType: 'application/json',
-                temperature: 0.4,
-            },
+        const responseText = await requestChatCompletion({
+            messages: [{ role: 'user', content: prompt }],
+            jsonMode: true,
+            expectJson: true,
+            maxTokens: 1500,
         });
-    } catch (error) {
-        console.error('Gemini API Error:', error);
-        const reason = String(error?.message || '').trim() || 'Unknown Gemini SDK error';
-        throw new AppError(`Gemini request failed: ${reason}`, 502);
-    }
 
-    const responseText = extractTextFromGeminiResponse(responseResult);
-    if (!responseText) {
-        throw new AppError('AI service returned an empty response.', 502);
+        return parseAIJsonResponse(
+            responseText,
+            normalizedResumeData,
+            feedbackContext,
+        );
+    } catch (_error) {
+        return normalizeResumeImprovePayload(
+            buildFallbackPayload({
+                resumeData: normalizedResumeData,
+                feedbackContext,
+            }),
+            normalizedResumeData,
+            feedbackContext,
+        );
     }
-
-    return parseGeminiJsonResponse(responseText, normalizedResumeData, feedbackContext);
 };
-
 module.exports = {
-    buildResumeImprovePrompt,
-    parseGeminiJsonResponse,
-    improveResumeWithGemini,
-    generateAiImprovements: improveResumeWithGemini,
+    improveResumeWithAI,
+    generateAiImprovements: improveResumeWithAI,
 };
