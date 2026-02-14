@@ -1,334 +1,401 @@
-const { ATS_PRIORITY_KEYWORDS } = require('../constants/atsKeywords');
-const { extractKeywordsFromText } = require('./keywordExtract.service');
-const { requestChatCompletion } = require('./aiClient.service');
+const { AppError } = require('../utils/response');
+const { clamp, calculateSectionQualityScore } = require('../utils/scoreCalculator');
+const { normalizeText, tokenize } = require('../utils/normalizeText');
 const {
-    calculateCoverageScore,
-    calculateKeywordDensityScore,
-    calculateSectionQualityScore,
-    calculateOverallScore,
-} = require('../utils/scoreCalculator');
-const { normalizeText } = require('../utils/normalizeText');
+    extractKeywordsFromText,
+    normalizeKeywordTerm,
+    normalizeSkillArray,
+    dedupeNormalizedKeywords,
+    parseUserSkillsInput,
+    isTechnicalKeyword,
+    getKeywordCategory,
+    buildSearchText,
+    countKeywordOccurrences,
+} = require('./keywordExtract.service');
 
-const TECHNICAL_SKILL_SET = new Set(
-    ATS_PRIORITY_KEYWORDS.filter((keyword) => !['communication', 'leadership', 'project management', 'problem solving'].includes(keyword)),
-);
+const MAX_RESULT_KEYWORDS = 120;
+const MAX_OUTPUT_LIST = 120;
+const MAX_RECOMMENDATIONS = 12;
 
-const normalizeForMatch = (value = '') => normalizeText(String(value || '')).toLowerCase().trim();
-const normalizeSkillTerm = (value = '') => normalizeForMatch(value);
-const toSafeAiJson = (data, maxChars = 12_000) => JSON.stringify(data ?? '').slice(0, maxChars);
+const ensureObject = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
 
-const dedupeKeywords = (keywords = [], max = 45) => {
-    const set = new Set();
-    for (const value of keywords) {
-        const normalized = normalizeForMatch(value);
-        if (!normalized) {
-            continue;
-        }
-        set.add(normalized);
-        if (set.size >= max) {
-            break;
-        }
-    }
-    return [...set];
-};
-
-const normalizeSkillList = (skills = [], max = 25) => dedupeKeywords(skills.map((skill) => normalizeSkillTerm(skill)), max);
-
-const keywordWeight = (keyword) => {
-    if (ATS_PRIORITY_KEYWORDS.includes(keyword)) {
-        return 2.2;
-    }
-    if (keyword.split(' ').length > 1) {
-        return 1.6;
-    }
-    return 1.1;
-};
-
-const extractResumeSkills = (resumeData = null) => {
-    const rawSkills = Array.isArray(resumeData?.skills) ? resumeData.skills : [];
-    return normalizeSkillList(rawSkills, 30);
-};
-
-const buildResumeDrivenTargets = ({ resumeKeywords = [], resumeData = null }) => {
-    const explicitSkills = extractResumeSkills(resumeData);
-    const technicalKeywords = normalizeSkillList(
-        resumeKeywords.filter((keyword) => TECHNICAL_SKILL_SET.has(normalizeSkillTerm(keyword))),
-        30,
-    );
-
-    const targetSkills = normalizeSkillList([...explicitSkills, ...technicalKeywords], 25);
-    const targetKeywords = dedupeKeywords([...resumeKeywords, ...targetSkills], 40);
-    const safeKeywords = targetKeywords.length ? targetKeywords : dedupeKeywords(resumeKeywords.slice(0, 30), 30);
-
-    return {
-        source: 'resume',
-        inferredProfile: 'resume-derived',
-        targetKeywords: safeKeywords,
-        targetSkills,
-    };
-};
-
-const parseAiResumeTargets = (value = '') => {
-    const cleaned = String(value)
-        .replace(/```json/gi, '')
-        .replace(/```/g, '')
+const toTitleCase = (value = '') =>
+    String(value || '')
+        .split(' ')
+        .map((token) => (token ? `${token.charAt(0).toUpperCase()}${token.slice(1)}` : ''))
+        .join(' ')
         .trim();
 
-    let parsed = null;
-    try {
-        parsed = JSON.parse(cleaned);
-    } catch (_error) {
-        const firstBrace = cleaned.indexOf('{');
-        const lastBrace = cleaned.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
-            try {
-                parsed = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
-            } catch (_nestedError) {
-                parsed = null;
-            }
+const hasAnyText = (...values) => values.some((value) => Boolean(String(value || '').trim()));
+
+const collectResumeDataSkills = (resumeData = {}) => {
+    const safeResumeData = ensureObject(resumeData);
+    const skills = Array.isArray(safeResumeData.skills) ? safeResumeData.skills : [];
+    return normalizeSkillArray(skills, 80);
+};
+
+const buildResumeSectionsText = (resumeData = {}) => {
+    const safeResumeData = ensureObject(resumeData);
+    const personalDetails = ensureObject(safeResumeData.personalDetails);
+    const sections = [];
+
+    if (hasAnyText(personalDetails.title, personalDetails.summary)) {
+        sections.push([personalDetails.title, personalDetails.summary].filter(Boolean).join(' '));
+    }
+
+    (Array.isArray(safeResumeData.workExperience) ? safeResumeData.workExperience : []).forEach((entry) => {
+        const safeEntry = ensureObject(entry);
+        const text = [safeEntry.role, safeEntry.company, safeEntry.description].filter(Boolean).join(' ');
+        if (text.trim()) {
+            sections.push(text);
         }
-    }
-
-    if (!parsed) {
-        return null;
-    }
-
-    const targetKeywords = dedupeKeywords(parsed?.targetKeywords || [], 40);
-    const targetSkills = normalizeSkillList(parsed?.targetSkills || [], 25);
-    const inferredProfile = normalizeForMatch(parsed?.inferredProfile || parsed?.role || '') || 'general';
-
-    if (!targetKeywords.length) {
-        return null;
-    }
-
-    return {
-        source: 'ai',
-        inferredProfile,
-        targetKeywords,
-        targetSkills: targetSkills.length
-            ? targetSkills
-            : normalizeSkillList(
-                  targetKeywords.filter((keyword) => TECHNICAL_SKILL_SET.has(keyword)),
-                  20,
-              ),
-    };
-};
-
-
-const buildResumeOnlyPrompt = ({ resumeText, resumeKeywords }) => `You are an ATS optimization expert.
-Analyze the resume and output keywords/skills that should naturally appear in summary, work experience, projects, and internships.
-Return ONLY valid JSON:
-{
-  "inferredProfile": "string",
-  "targetKeywords": ["keyword1", "keyword2"],
-  "targetSkills": ["skill1", "skill2"]
-}
-Rules:
-1) Use lowercase concise terms.
-2) Do not include markdown or explanations.
-3) targetKeywords must represent strong ATS words expected in summary/experience/projects/internships.
-4) targetSkills must represent expected skills for this profile.
-
-Resume text:
-${resumeText}
-
-Top extracted resume keywords:
-${toSafeAiJson(resumeKeywords.slice(0, 30), 2_000)}`;
-
-const getResumeOnlyTargets = async ({ normalizedResume, resumeKeywords, resumeData }) => {
-    try {
-        const responseText = await requestChatCompletion({
-            messages: [
-                {
-                    role: 'user',
-                    content: buildResumeOnlyPrompt({
-                        resumeText: normalizedResume.slice(0, 10000),
-                        resumeKeywords,
-                    }),
-                },
-            ],
-            jsonMode: true,
-            expectJson: true,
-            maxTokens: 1200,
-        });
-
-        const parsed = parseAiResumeTargets(responseText);
-        if (parsed) {
-            return parsed;
-        }
-    } catch (_error) {
-        // Resume-driven fallback is used when AI call fails.
-    }
-
-    return buildResumeDrivenTargets({ resumeKeywords, resumeData });
-};
-
-const buildCriticalSectionText = (resumeData, fallbackText) => {
-    const details = resumeData?.personalDetails || {};
-
-    const summary = details.summary || '';
-    const experienceText = Array.isArray(resumeData?.workExperience)
-        ? resumeData.workExperience
-              .map((entry) => [entry?.role, entry?.company, entry?.description].filter(Boolean).join(' '))
-              .join('\n')
-        : '';
-    const projectsText = Array.isArray(resumeData?.projects)
-        ? resumeData.projects
-              .map((entry) => [entry?.name, entry?.techStack, entry?.description].filter(Boolean).join(' '))
-              .join('\n')
-        : '';
-    const internshipsText = Array.isArray(resumeData?.internships)
-        ? resumeData.internships
-              .map((entry) => [entry?.role, entry?.company, entry?.description].filter(Boolean).join(' '))
-              .join('\n')
-        : '';
-
-    const criticalText = [summary, experienceText, projectsText, internshipsText].filter(Boolean).join('\n');
-    return normalizeForMatch(criticalText || fallbackText || '');
-};
-
-const buildSkillsText = (resumeData, fallbackText) => {
-    const explicitSkills = Array.isArray(resumeData?.skills) ? resumeData.skills : [];
-    const skillText = explicitSkills.join(', ');
-    return normalizeForMatch(skillText || fallbackText || '');
-};
-
-const containsTerm = (text = '', term = '') => {
-    const normalizedText = normalizeForMatch(text);
-    const normalizedTerm = normalizeForMatch(term);
-
-    if (!normalizedText || !normalizedTerm) {
-        return false;
-    }
-
-    if (normalizedTerm.includes(' ')) {
-        return normalizedText.includes(normalizedTerm);
-    }
-
-    return new RegExp(`\\b${normalizedTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(normalizedText);
-};
-
-const calculateAtsScore = async ({ resumeText, resumeData = null }) => {
-    const normalizedResume = normalizeForMatch(resumeText);
-
-    if (!normalizedResume) {
-        return {
-            score: 0,
-            matchedKeywords: [],
-            missingKeywords: [],
-            missingWords: [],
-            missingSkills: [],
-            recommendations: ['Upload a resume or provide resume content to start ATS analysis.'],
-            analysisMode: 'resume_only',
-            jobDescriptionUsed: false,
-            meta: {
-                coverageScore: 0,
-                densityScore: 0,
-                sectionScore: 0,
-                aiAssisted: false,
-                inferredProfile: 'general',
-            },
-        };
-    }
-
-    const criticalSectionText = buildCriticalSectionText(resumeData, normalizedResume);
-    const skillsText = buildSkillsText(resumeData, normalizedResume);
-
-    const resumeKeywords = extractKeywordsFromText(normalizedResume, { maxKeywords: 120 });
-    const resumeKeywordTerms = resumeKeywords.map((entry) => entry.term);
-
-    const inferredTargets = await getResumeOnlyTargets({
-        normalizedResume,
-        resumeKeywords: resumeKeywordTerms,
-        resumeData,
     });
 
-    const targetKeywords = dedupeKeywords(inferredTargets.targetKeywords, 40);
-    const targetSkills = normalizeSkillList(inferredTargets.targetSkills, 20);
-    const scoringTargets = dedupeKeywords([...targetKeywords, ...targetSkills], 45);
-    const matchedKeywords = [];
-    const missingKeywords = [];
-    const weightMap = new Map(scoringTargets.map((keyword) => [keyword, keywordWeight(keyword)]));
+    (Array.isArray(safeResumeData.projects) ? safeResumeData.projects : []).forEach((entry) => {
+        const safeEntry = ensureObject(entry);
+        const text = [safeEntry.name, safeEntry.techStack, safeEntry.description].filter(Boolean).join(' ');
+        if (text.trim()) {
+            sections.push(text);
+        }
+    });
 
-    let totalWeight = scoringTargets.reduce((sum, keyword) => sum + (weightMap.get(keyword) || 1), 0);
+    (Array.isArray(safeResumeData.internships) ? safeResumeData.internships : []).forEach((entry) => {
+        const safeEntry = ensureObject(entry);
+        const text = [safeEntry.role, safeEntry.company, safeEntry.description].filter(Boolean).join(' ');
+        if (text.trim()) {
+            sections.push(text);
+        }
+    });
+
+    const explicitSkills = collectResumeDataSkills(safeResumeData);
+    if (explicitSkills.length) {
+        sections.push(`skills: ${explicitSkills.join(', ')}`);
+    }
+
+    return normalizeText(sections.join('\n'));
+};
+
+const keywordWeight = (keyword = '', userSkillsSet = new Set(), explicitSkillsSet = new Set()) => {
+    const normalized = normalizeKeywordTerm(keyword);
+    if (!normalized) {
+        return 1;
+    }
+
+    let weight = 1.15;
+
+    if (isTechnicalKeyword(normalized)) {
+        weight += 0.75;
+    }
+
+    if (normalized.split(' ').length > 1) {
+        weight += 0.2;
+    }
+
+    if (userSkillsSet.has(normalized)) {
+        weight += 0.35;
+    }
+
+    if (explicitSkillsSet.has(normalized)) {
+        weight += 0.2;
+    }
+
+    return weight;
+};
+
+const calculateCoverageScore = ({
+    jdKeywords = [],
+    keywordPresenceMap = new Map(),
+    resumeSet = new Set(),
+    userSkillsSet = new Set(),
+    explicitSkillsSet = new Set(),
+}) => {
+    if (!jdKeywords.length) {
+        return 0;
+    }
+
+    let totalWeight = 0;
     let matchedWeight = 0;
 
-    for (const keyword of scoringTargets) {
-        const weight = weightMap.get(keyword) || 1;
-        if (containsTerm(criticalSectionText, keyword)) {
-            matchedKeywords.push(keyword);
+    jdKeywords.forEach((keyword) => {
+        const normalized = normalizeKeywordTerm(keyword);
+        const weight = keywordWeight(normalized, userSkillsSet, explicitSkillsSet);
+        totalWeight += weight;
+
+        const presenceFromMap = Number(keywordPresenceMap.get(normalized) || 0);
+        const presence = presenceFromMap > 0 || resumeSet.has(normalized) ? 1 : 0;
+        if (presence > 0) {
             matchedWeight += weight;
-        } else {
-            missingKeywords.push(keyword);
+            return;
         }
-    }
 
-    const missingSkillsSet = new Set(targetSkills.filter((skill) => !containsTerm(skillsText, skill)));
-
-    for (const keyword of ATS_PRIORITY_KEYWORDS) {
-        if (missingSkillsSet.size >= 20) {
-            break;
+        if (userSkillsSet.has(normalized)) {
+            matchedWeight += weight * 0.35;
         }
-        const normalizedSkill = normalizeSkillTerm(keyword);
-        if (!normalizedSkill) {
-            continue;
-        }
-        if (!missingSkillsSet.has(normalizedSkill) && TECHNICAL_SKILL_SET.has(normalizedSkill) && containsTerm(missingKeywords.join(' '), normalizedSkill)) {
-            missingSkillsSet.add(normalizedSkill);
-        }
-    }
-
-    const missingSkills = normalizeSkillList([...missingSkillsSet], 20);
+    });
 
     if (totalWeight <= 0) {
-        totalWeight = 1;
+        return 0;
     }
 
-    const coverageScore = calculateCoverageScore({ matchedWeight, totalWeight });
-    const densityScore = calculateKeywordDensityScore({
-        resumeText: normalizedResume,
-        matchedKeywords,
+    return clamp((matchedWeight / totalWeight) * 100);
+};
+
+const calculateDensityScore = ({
+    searchText = '',
+    jdKeywords = [],
+    userSkillsSet = new Set(),
+}) => {
+    const tokens = tokenize(searchText);
+    if (!tokens.length || !jdKeywords.length) {
+        return 0;
+    }
+
+    let weightedMentions = 0;
+
+    jdKeywords.forEach((keyword) => {
+        const normalized = normalizeKeywordTerm(keyword);
+        if (!normalized) {
+            return;
+        }
+
+        const occurrences = countKeywordOccurrences(searchText, normalized);
+        weightedMentions += occurrences;
+
+        if (!occurrences && userSkillsSet.has(normalized)) {
+            weightedMentions += 0.35;
+        }
     });
-    const sectionScore = calculateSectionQualityScore(normalizedResume);
-    const score = Math.round(
-        calculateOverallScore({
-            coverageScore,
-            densityScore,
-            sectionScore,
-        }),
+
+    const densityPercent = (weightedMentions / Math.max(tokens.length, 1)) * 100;
+
+    if (densityPercent < 0.6) {
+        return clamp(22 + densityPercent * 20);
+    }
+
+    if (densityPercent < 1.5) {
+        return clamp(40 + densityPercent * 18);
+    }
+
+    if (densityPercent <= 5.5) {
+        return clamp(58 + (densityPercent - 1.5) * 8.5);
+    }
+
+    if (densityPercent <= 8.5) {
+        return clamp(92 - (densityPercent - 5.5) * 8);
+    }
+
+    return clamp(55 - (densityPercent - 8.5) * 2.5);
+};
+
+const calculateSectionCompleteness = (resumeData = {}, resumeText = '', explicitSkillsSet = new Set(), userSkillsSet = new Set()) => {
+    const safeResumeData = ensureObject(resumeData);
+    const personalDetails = ensureObject(safeResumeData.personalDetails);
+
+    const hasSummary = hasAnyText(personalDetails.summary, personalDetails.title);
+    const hasExperience = (Array.isArray(safeResumeData.workExperience) ? safeResumeData.workExperience : []).some((entry) =>
+        hasAnyText(entry?.role, entry?.company, entry?.description),
+    );
+    const hasProjects = (Array.isArray(safeResumeData.projects) ? safeResumeData.projects : []).some((entry) =>
+        hasAnyText(entry?.name, entry?.techStack, entry?.description),
+    );
+    const hasInternships = (Array.isArray(safeResumeData.internships) ? safeResumeData.internships : []).some((entry) =>
+        hasAnyText(entry?.role, entry?.company, entry?.description),
+    );
+    const hasEducation = (Array.isArray(safeResumeData.education) ? safeResumeData.education : []).some((entry) =>
+        hasAnyText(entry?.degree, entry?.institution, entry?.description),
+    );
+    const hasSkills = explicitSkillsSet.size > 0 || userSkillsSet.size > 0;
+
+    const structuredPresence =
+        (hasSummary ? 18 : 0) +
+        (hasExperience ? 24 : 0) +
+        (hasProjects || hasInternships ? 20 : 0) +
+        (hasSkills ? 22 : 0) +
+        (hasEducation ? 16 : 0);
+
+    const textBasedQuality = calculateSectionQualityScore(normalizeText(resumeText || ''));
+    return clamp(structuredPresence * 0.65 + textBasedQuality * 0.35);
+};
+
+const calculateSkillsSectionStrength = ({
+    jdKeywords = [],
+    explicitSkillsSet = new Set(),
+    userSkillsSet = new Set(),
+}) => {
+    const technicalJdKeywords = jdKeywords.filter((keyword) => isTechnicalKeyword(keyword));
+    if (!technicalJdKeywords.length) {
+        return clamp((explicitSkillsSet.size + userSkillsSet.size) * 6, 0, 100);
+    }
+
+    const matches = technicalJdKeywords.reduce((count, keyword) => {
+        const normalized = normalizeKeywordTerm(keyword);
+        if (explicitSkillsSet.has(normalized) || userSkillsSet.has(normalized)) {
+            return count + 1;
+        }
+        return count;
+    }, 0);
+
+    return clamp((matches / technicalJdKeywords.length) * 100);
+};
+
+const chooseRecommendationSection = (keyword = '') => {
+    const category = getKeywordCategory(keyword);
+
+    if (['frameworks', 'languages', 'databases', 'tools'].includes(category)) {
+        return 'skills';
+    }
+
+    if (['cloud', 'testing', 'architecture', 'ai_ml'].includes(category)) {
+        return 'projects';
+    }
+
+    return 'experience';
+};
+
+const buildRecommendations = (missingKeywords = []) => {
+    const normalizedMissing = dedupeNormalizedKeywords(missingKeywords, MAX_OUTPUT_LIST);
+
+    if (!normalizedMissing.length) {
+        return [];
+    }
+
+    const recommendations = [];
+    const seen = new Set();
+
+    for (const keyword of normalizedMissing) {
+        if (recommendations.length >= MAX_RECOMMENDATIONS) {
+            break;
+        }
+
+        const section = chooseRecommendationSection(keyword);
+        const titleKeyword = toTitleCase(keyword);
+
+        let recommendation = '';
+        if (section === 'skills') {
+            recommendation = `Include ${titleKeyword} in skills section`;
+        } else if (section === 'projects') {
+            recommendation = `Add ${titleKeyword} in projects section`;
+        } else {
+            recommendation = `Use ${titleKeyword} in experience bullet points`;
+        }
+
+        const key = recommendation.toLowerCase();
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        recommendations.push(recommendation);
+    }
+
+    return recommendations;
+};
+
+const calculateAtsScore = async ({
+    resumeText,
+    resumeData = null,
+    jobDescription = '',
+    userSkills = '',
+}) => {
+    const normalizedResumeText = normalizeText(resumeText || '');
+
+    if (!normalizedResumeText.trim()) {
+        throw new AppError('Resume text is required for ATS analysis.', 400);
+    }
+
+    const safeResumeData = ensureObject(resumeData);
+    const resumeSectionsText = buildResumeSectionsText(safeResumeData);
+    const combinedResumeText = normalizeText([normalizedResumeText, resumeSectionsText].filter(Boolean).join('\n'));
+    const normalizedJobDescription = normalizeText(jobDescription || '');
+
+    const explicitSkills = collectResumeDataSkills(safeResumeData);
+    const explicitSkillsSet = new Set(explicitSkills);
+    const { normalizedSkills: normalizedUserSkills } = parseUserSkillsInput(userSkills, 80);
+    const normalizedUserSkillsSet = new Set(normalizedUserSkills);
+
+    const jdKeywordEntries = extractKeywordsFromText(normalizedJobDescription, {
+        maxKeywords: MAX_RESULT_KEYWORDS,
+        includeSoftSkills: true,
+    });
+    const jobDescriptionKeywords = dedupeNormalizedKeywords(
+        jdKeywordEntries.map((item) => item.normalized),
+        MAX_RESULT_KEYWORDS,
+    );
+    const includeSoftSkillsInResume = jdKeywordEntries.some((item) => item?.category === 'soft_skills');
+
+    const resumeKeywordEntries = extractKeywordsFromText(combinedResumeText, {
+        maxKeywords: MAX_RESULT_KEYWORDS,
+        includeSoftSkills: includeSoftSkillsInResume,
+    });
+    const extractedResumeSkills = resumeKeywordEntries.map((item) => item.term).slice(0, MAX_RESULT_KEYWORDS);
+    const normalizedResumeFromText = resumeKeywordEntries.map((item) => item.normalized);
+    const normalizedResumeSkills = dedupeNormalizedKeywords(
+        [...normalizedResumeFromText, ...explicitSkills],
+        MAX_RESULT_KEYWORDS,
     );
 
-    const recommendations = ['ATS score is calculated from your uploaded resume content (no dummy placeholder data).'];
-    if (missingKeywords.length > 0) {
-        recommendations.push(`Add missing words in summary/experience/projects/internships: ${missingKeywords.slice(0, 6).join(', ')}.`);
-    }
-    if (missingSkills.length > 0) {
-        recommendations.push(`Strengthen your skills section with: ${missingSkills.slice(0, 6).join(', ')}.`);
-    }
-    if (sectionScore < 60) {
-        recommendations.push('Improve section clarity using clear headings for Summary, Experience, Skills, and Education.');
-    }
-    if (densityScore < 55) {
-        recommendations.push('Increase relevant keyword usage in project and experience bullets without keyword stuffing.');
-    }
+    const resumeSet = new Set(normalizedResumeSkills);
 
-    return {
-        score,
-        matchedKeywords: matchedKeywords.slice(0, 25),
-        missingKeywords: missingKeywords.slice(0, 25),
-        missingWords: missingKeywords.slice(0, 25),
-        missingSkills: missingSkills.slice(0, 20),
+    const matchedKeywords = jobDescriptionKeywords.filter((keyword) => resumeSet.has(keyword));
+    const missingKeywords = jobDescriptionKeywords.filter((keyword) => !resumeSet.has(keyword));
+    const missingSkills = missingKeywords.filter((keyword) => isTechnicalKeyword(keyword));
+    const resumeSearchText = buildSearchText(combinedResumeText);
+    const keywordPresenceMap = new Map(
+        jobDescriptionKeywords.map((keyword) => [
+            keyword,
+            countKeywordOccurrences(resumeSearchText, keyword),
+        ]),
+    );
+
+    const coverageScore = jobDescriptionKeywords.length
+        ? calculateCoverageScore({
+              jdKeywords: jobDescriptionKeywords,
+              keywordPresenceMap,
+              resumeSet,
+              userSkillsSet: normalizedUserSkillsSet,
+              explicitSkillsSet,
+          })
+        : clamp((normalizedResumeSkills.length / 80) * 100);
+
+    const densityScore = jobDescriptionKeywords.length
+        ? calculateDensityScore({
+              searchText: resumeSearchText,
+              jdKeywords: jobDescriptionKeywords,
+              userSkillsSet: normalizedUserSkillsSet,
+          })
+        : clamp((resumeKeywordEntries.length / 70) * 100);
+
+    const skillsSectionStrength = calculateSkillsSectionStrength({
+        jdKeywords: jobDescriptionKeywords,
+        explicitSkillsSet,
+        userSkillsSet: normalizedUserSkillsSet,
+    });
+    const sectionCompleteness = calculateSectionCompleteness(
+        safeResumeData,
+        combinedResumeText,
+        explicitSkillsSet,
+        normalizedUserSkillsSet,
+    );
+    const sectionScore = clamp(skillsSectionStrength * 0.55 + sectionCompleteness * 0.45);
+
+    const atsScore = Math.round(clamp(coverageScore * 0.5 + densityScore * 0.2 + sectionScore * 0.3));
+    const recommendations = buildRecommendations(missingKeywords);
+
+    const result = {
+        extractedResumeSkills: extractedResumeSkills.slice(0, MAX_RESULT_KEYWORDS),
+        normalizedResumeSkills: normalizedResumeSkills.slice(0, MAX_RESULT_KEYWORDS),
+        normalizedUserSkills: normalizedUserSkills.slice(0, MAX_OUTPUT_LIST),
+        jobDescriptionKeywords: jobDescriptionKeywords.slice(0, MAX_RESULT_KEYWORDS),
+        matchedKeywords: matchedKeywords.slice(0, MAX_OUTPUT_LIST),
+        missingKeywords: missingKeywords.slice(0, MAX_OUTPUT_LIST),
+        missingSkills: missingSkills.slice(0, MAX_OUTPUT_LIST),
+        atsScore,
+        coverageScore: Math.round(coverageScore),
+        densityScore: Math.round(densityScore),
+        sectionScore: Math.round(sectionScore),
         recommendations,
-        analysisMode: 'resume_only',
-        jobDescriptionUsed: false,
-        meta: {
-            coverageScore: Math.round(coverageScore),
-            densityScore: Math.round(densityScore),
-            sectionScore: Math.round(sectionScore),
-            aiAssisted: inferredTargets.source === 'ai',
-            inferredProfile: inferredTargets.inferredProfile || 'general',
-        },
     };
+
+    return result;
 };
 
 module.exports = {
