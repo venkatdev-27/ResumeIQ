@@ -1,27 +1,61 @@
 const dotenv = require('dotenv');
+const mongoose = require('mongoose');
 
-// Load env only in local development
-if (process.env.NODE_ENV !== 'production') {
-  dotenv.config();
-}
-
-const app = require('./app');
+const { validateEnv } = require('./config/validateEnv');
 const connectDB = require('./config/db');
+const app = require('./app');
 
-const startServer = async () => {
-  try {
-    await connectDB();
+dotenv.config();
 
-    const port = process.env.PORT || 5000;
+const DB_RETRY_INTERVAL_MS = 30_000;
 
-    app.listen(port, '0.0.0.0', () => {
-      console.log(`🚀 Server running on port ${port}`);
+const setupProcessErrorHandlers = () => {
+    process.on('unhandledRejection', (reason) => {
+        // eslint-disable-next-line no-console
+        console.error('Unhandled promise rejection:', reason);
     });
 
-  } catch (error) {
-    console.error('❌ Failed to start server:', error.message);
-    process.exit(1);
-  }
+    process.on('uncaughtException', (error) => {
+        // eslint-disable-next-line no-console
+        console.error('Uncaught exception:', error);
+    });
 };
 
-startServer();
+const scheduleDbReconnect = () => {
+    const timer = setInterval(async () => {
+        if (mongoose.connection.readyState !== 1) {
+            await connectDB().catch(() => false);
+        }
+    }, DB_RETRY_INTERVAL_MS);
+
+    timer.unref();
+};
+
+const startServer = async () => {
+    setupProcessErrorHandlers();
+
+    const envState = validateEnv({ strict: false });
+    if (!envState.ok) {
+        // eslint-disable-next-line no-console
+        console.error(`Environment validation warnings (non-fatal): ${envState.missing.join(', ')}`);
+    }
+
+    if (envState.warnings.length) {
+        // eslint-disable-next-line no-console
+        console.warn(envState.warnings.join(' | '));
+    }
+
+    await connectDB();
+    scheduleDbReconnect();
+
+    const port = Number(process.env.PORT) || 5000;
+    app.listen(port, '0.0.0.0', () => {
+        // eslint-disable-next-line no-console
+        console.log(`Server running on port ${port}`);
+    });
+};
+
+startServer().catch((error) => {
+    // eslint-disable-next-line no-console
+    console.error('Failed to start server:', error.message);
+});
