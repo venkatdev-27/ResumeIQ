@@ -3,10 +3,46 @@ const { requestChatCompletion } = require('./aiClient.service');
 
 const MAX_AI_PAYLOAD_CHARS = 12_000;
 const TARGET_SUMMARY_LINES = 4;
+const TARGET_SUMMARY_MIN_WORDS = 45;
+const TARGET_SUMMARY_MAX_WORDS = 47;
+const TARGET_SUMMARY_WORDS = 46;
 
 const TARGET_BULLET_LINES = 3;
+const TARGET_BULLET_WORDS = 15;
 const TARGET_SHORT_LIST_ITEMS = 20;
 const ACTION_VERBS = ['Delivered', 'Engineered', 'Implemented', 'Optimized', 'Architected', 'Streamlined', 'Automated', 'Integrated', 'Developed', 'Deployed', 'Enhanced'];
+const ACTION_VERB_SET = new Set(ACTION_VERBS.map((verb) => verb.toLowerCase()));
+const SUMMARY_FALLBACK_TOKENS = [
+    'enterprise',
+    'platforms',
+    'automation',
+    'scalability',
+    'reliability',
+    'optimization',
+    'delivery',
+    'architecture',
+    'quality',
+    'collaboration',
+];
+const DEFAULT_PROFESSIONAL_SUMMARY_LINES = [
+    'Technology professional delivering reliable software solutions through hands-on, collaborative development and improvement.',
+    'Uses modern workflows to build features, resolve issues, and improve outcomes.',
+    'Contributes across projects with documentation, testing discipline, and ownership of deliverables.',
+    'Focused on scalable architecture, maintainability, and learning aligned with long-term business goals.',
+];
+const BULLET_FALLBACK_TOKENS = [
+    'using',
+    'modern',
+    'engineering',
+    'patterns',
+    'for',
+    'scalable',
+    'reliable',
+    'delivery',
+    'and',
+    'maintainable',
+    'outcomes',
+];
 
 const truncateText = (value = '', max = 1200) => String(value || '').trim().slice(0, max);
 const toSafeAiJson = (data, maxChars = MAX_AI_PAYLOAD_CHARS) => JSON.stringify(data ?? '').slice(0, maxChars);
@@ -23,11 +59,77 @@ const ensureObject = (value) => (value && typeof value === 'object' && !Array.is
 
 const hasAnyText = (...values) => values.some((value) => Boolean(String(value || '').trim()));
 
+const ATS_SKILL_NORMALIZATION_MAP = new Map([
+    ['react', 'ReactJS'],
+    ['reactjs', 'ReactJS'],
+    ['react js', 'ReactJS'],
+    ['node', 'NodeJS'],
+    ['nodejs', 'NodeJS'],
+    ['node js', 'NodeJS'],
+    ['express', 'ExpressJS'],
+    ['expressjs', 'ExpressJS'],
+    ['express js', 'ExpressJS'],
+    ['mongo', 'MongoDB'],
+    ['mongodb', 'MongoDB'],
+    ['mongo db', 'MongoDB'],
+    ['js', 'JavaScript'],
+    ['javascript', 'JavaScript'],
+    ['java script', 'JavaScript'],
+    ['ts', 'TypeScript'],
+    ['typescript', 'TypeScript'],
+]);
+
+const normalizeSkillKey = (value = '') =>
+    compactToOneLine(value)
+        .toLowerCase()
+        .replace(/[._/\\-]+/g, ' ')
+        .replace(/[^a-z0-9+\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+const toTitleCase = (value = '') =>
+    compactToOneLine(value)
+        .split(' ')
+        .map((token) => {
+            if (!token) {
+                return '';
+            }
+            if (/^[A-Z0-9]+$/.test(token)) {
+                return token;
+            }
+            return `${token.charAt(0).toUpperCase()}${token.slice(1).toLowerCase()}`;
+        })
+        .join(' ')
+        .trim();
+
+const normalizeAtsSkillName = (value = '') => {
+    const normalized = normalizeSkillKey(value);
+    if (!normalized) {
+        return '';
+    }
+
+    const compact = normalized.replace(/\s+/g, '');
+    if (ATS_SKILL_NORMALIZATION_MAP.has(normalized)) {
+        return ATS_SKILL_NORMALIZATION_MAP.get(normalized);
+    }
+
+    if (ATS_SKILL_NORMALIZATION_MAP.has(compact)) {
+        return ATS_SKILL_NORMALIZATION_MAP.get(compact);
+    }
+
+    if (normalized.includes(':')) {
+        return compactToOneLine(value);
+    }
+
+    return toTitleCase(value);
+};
+
 const normalizeSkills = (...sources) => {
     const seen = new Set();
     const merged = sources.flatMap((source) => ensureArrayOfStrings(source));
 
     return merged
+        .map((skill) => normalizeAtsSkillName(skill))
         .filter((skill) => {
             const key = String(skill || '').trim().toLowerCase();
             if (!key || seen.has(key)) {
@@ -56,6 +158,299 @@ const normalizeOneLineList = (value, max = TARGET_SHORT_LIST_ITEMS) =>
         .filter(Boolean)
         .slice(0, max);
 
+const tokenizeWords = (value = '') =>
+    compactToOneLine(value).match(/[A-Za-z0-9+#./-]+/g) || [];
+
+const dedupeTokensCaseInsensitive = (tokens = []) => {
+    const seen = new Set();
+    return (Array.isArray(tokens) ? tokens : []).filter((token) => {
+        const key = String(token || '').toLowerCase();
+        if (!key || seen.has(key)) {
+            return false;
+        }
+        seen.add(key);
+        return true;
+    });
+};
+
+const distributeWordsAcrossLines = (totalWords = TARGET_SUMMARY_WORDS, lines = TARGET_SUMMARY_LINES) => {
+    const safeLines = Math.max(1, Number(lines) || TARGET_SUMMARY_LINES);
+    const base = Math.floor(totalWords / safeLines);
+    const remainder = totalWords % safeLines;
+    return Array.from({ length: safeLines }, (_value, index) => base + (index < remainder ? 1 : 0));
+};
+
+const fillTokensToTarget = (tokens = [], targetWordCount = 0, extraPools = []) => {
+    const result = [...(Array.isArray(tokens) ? tokens : [])].slice(0, targetWordCount);
+    if (result.length >= targetWordCount) {
+        return result.slice(0, targetWordCount);
+    }
+
+    const pools = Array.isArray(extraPools) ? extraPools : [];
+    for (const pool of pools) {
+        for (const token of Array.isArray(pool) ? pool : []) {
+            if (result.length >= targetWordCount) {
+                break;
+            }
+            const safeToken = String(token || '').trim();
+            if (!safeToken) {
+                continue;
+            }
+            result.push(safeToken);
+        }
+        if (result.length >= targetWordCount) {
+            break;
+        }
+    }
+
+    while (result.length < targetWordCount) {
+        result.push('delivery');
+    }
+
+    return result.slice(0, targetWordCount);
+};
+
+const pickActionVerb = (seed = '') => {
+    const normalized = compactToOneLine(seed || '');
+    if (!normalized) {
+        return ACTION_VERBS[0];
+    }
+    const index = normalized.length % ACTION_VERBS.length;
+    return ACTION_VERBS[index];
+};
+
+const buildSummaryContextTokens = (resumeData = {}) => {
+    const safeResumeData = ensureObject(resumeData);
+    const personal = ensureObject(safeResumeData.personalDetails);
+
+    const sources = [
+        personal.title,
+        ...ensureArrayOfStrings(safeResumeData.skills),
+        ...((Array.isArray(safeResumeData.workExperience) ? safeResumeData.workExperience : []).flatMap((item) => [item?.role, item?.company])),
+        ...((Array.isArray(safeResumeData.projects) ? safeResumeData.projects : []).flatMap((item) => [item?.name, item?.techStack])),
+        ...((Array.isArray(safeResumeData.internships) ? safeResumeData.internships : []).flatMap((item) => [item?.role, item?.company])),
+    ];
+
+    return dedupeTokensCaseInsensitive(
+        sources
+            .flatMap((value) => tokenizeWords(value))
+            .filter((token) => token.length > 2),
+    );
+};
+
+const buildDefaultProfessionalSummary = () =>
+    DEFAULT_PROFESSIONAL_SUMMARY_LINES.join('\n');
+
+const pickLabelTokens = (value = '', maxTokens = 3) =>
+    tokenizeWords(value)
+        .filter(Boolean)
+        .slice(0, maxTokens);
+
+const buildContextDrivenSummary = (resumeData = {}) => {
+    const titleTokens = pickLabelTokens(deriveProfessionalTitle(resumeData), 2);
+    const skillTokens = dedupeTokensCaseInsensitive(
+        normalizeSkills(resumeData?.skills)
+            .slice(0, 6)
+            .flatMap((skill) => pickLabelTokens(skill, 1)),
+    );
+    const workLabel = toDisplayList(extractWorkLabels(resumeData), 1);
+    const internshipLabel = toDisplayList(extractInternshipLabels(resumeData), 1);
+    const projectLabel = toDisplayList(extractProjectLabels(resumeData), 1);
+    const experienceTokens = pickLabelTokens(workLabel || internshipLabel, 3);
+    const projectTokens = pickLabelTokens(projectLabel || internshipLabel || workLabel, 3);
+    const hasContextData =
+        Boolean(compactToOneLine(resumeData?.personalDetails?.title || '')) ||
+        skillTokens.length > 0 ||
+        experienceTokens.length > 0 ||
+        projectTokens.length > 0;
+
+    if (!hasContextData) {
+        return buildDefaultProfessionalSummary();
+    }
+
+    const lineTargets = distributeWordsAcrossLines(TARGET_SUMMARY_WORDS, TARGET_SUMMARY_LINES);
+    const contextPool = dedupeTokensCaseInsensitive([
+        ...titleTokens,
+        ...skillTokens,
+        ...experienceTokens,
+        ...projectTokens,
+        ...buildSummaryContextTokens(resumeData),
+        ...SUMMARY_FALLBACK_TOKENS,
+    ]);
+
+    if (!contextPool.length) {
+        return buildDefaultProfessionalSummary();
+    }
+
+    const lineOneTokens = fillTokensToTarget(
+        [
+            ...titleTokens,
+            'professional',
+            'delivering',
+            'reliable',
+            'scalable',
+            'software',
+            'solutions',
+            'aligned',
+            'with',
+            'target',
+            'role',
+            'expectations',
+        ],
+        lineTargets[0] || 12,
+        [contextPool],
+    );
+
+    const lineTwoTokens = fillTokensToTarget(
+        [
+            'Core',
+            'skills',
+            'include',
+            ...skillTokens.slice(0, 4),
+            'with',
+            'focus',
+            'on',
+            'maintainable',
+            'architecture',
+        ],
+        lineTargets[1] || 12,
+        [contextPool],
+    );
+
+    const lineThreeTokens = fillTokensToTarget(
+        [
+            'Experience',
+            'spans',
+            ...experienceTokens,
+            'driving',
+            'implementation',
+            'testing',
+            'integration',
+            'and',
+            'improvement',
+        ],
+        lineTargets[2] || 11,
+        [contextPool],
+    );
+
+    const lineFourTokens = fillTokensToTarget(
+        [
+            'Projects',
+            'and',
+            'internships',
+            'demonstrate',
+            ...projectTokens,
+            'through',
+            'ownership',
+            'collaboration',
+            'and',
+            'delivery',
+        ],
+        lineTargets[3] || 11,
+        [contextPool],
+    );
+
+    const lines = [lineOneTokens, lineTwoTokens, lineThreeTokens, lineFourTokens]
+        .map((tokens) => ensureSentenceEnding(tokens.join(' ')))
+        .slice(0, TARGET_SUMMARY_LINES);
+
+    return lines.join('\n');
+};
+
+const enforceSummaryFormat = (lines = [], resumeData = {}) => {
+    const normalizedLines = fillToFixedLineCount(lines, TARGET_SUMMARY_LINES, buildSummaryGeneratorLines(resumeData), {
+        allowVerbRewrites: false,
+    });
+
+    const normalizedLineTokens = normalizedLines.map((line) => tokenizeWords(line));
+    const contextTokens = buildSummaryContextTokens(resumeData);
+    const fallbackTokens = SUMMARY_FALLBACK_TOKENS;
+    const hasBaseTokens = normalizedLineTokens.some((tokens) => tokens.length > 0);
+
+    if (!hasBaseTokens && !contextTokens.length) {
+        return buildDefaultProfessionalSummary();
+    }
+
+    let targetWords = TARGET_SUMMARY_WORDS;
+    if (targetWords < TARGET_SUMMARY_MIN_WORDS) {
+        targetWords = TARGET_SUMMARY_MIN_WORDS;
+    }
+    if (targetWords > TARGET_SUMMARY_MAX_WORDS) {
+        targetWords = TARGET_SUMMARY_MAX_WORDS;
+    }
+
+    const lineDistribution = distributeWordsAcrossLines(targetWords, TARGET_SUMMARY_LINES);
+    const tokenPool = dedupeTokensCaseInsensitive([
+        ...contextTokens,
+        ...fallbackTokens,
+        ...tokenizeWords(buildDefaultProfessionalSummary()),
+    ]);
+    let poolCursor = 0;
+
+    const nextPoolToken = () => {
+        while (poolCursor < tokenPool.length) {
+            const token = String(tokenPool[poolCursor] || '').trim();
+            poolCursor += 1;
+            if (token) {
+                return token;
+            }
+        }
+        return 'delivery';
+    };
+
+    const renderedLines = [];
+    for (let index = 0; index < TARGET_SUMMARY_LINES; index += 1) {
+        const wordCount = lineDistribution[index] || 0;
+        const baseTokensForLine = [...(normalizedLineTokens[index] || [])].slice(0, wordCount);
+
+        while (baseTokensForLine.length < wordCount) {
+            baseTokensForLine.push(nextPoolToken());
+        }
+
+        renderedLines.push(ensureSentenceEnding(baseTokensForLine.join(' ').trim()));
+    }
+
+    return renderedLines.slice(0, TARGET_SUMMARY_LINES).join('\n');
+};
+
+const enforceBulletWordCount = (line = '', options = {}) => {
+    const { contextLabel = '', sourceText = '' } = ensureObject(options);
+    const baseText = compactToOneLine(line) || compactToOneLine(sourceText);
+    let tokens = tokenizeWords(baseText);
+    const requiredVerb = pickActionVerb(contextLabel || sourceText || line);
+
+    if (!tokens.length) {
+        tokens = [requiredVerb];
+    }
+
+    if (!ACTION_VERB_SET.has(String(tokens[0] || '').toLowerCase())) {
+        tokens.unshift(requiredVerb);
+    } else {
+        const normalizedVerb = ACTION_VERBS.find((verb) => verb.toLowerCase() === String(tokens[0] || '').toLowerCase());
+        tokens[0] = normalizedVerb || requiredVerb;
+    }
+
+    const contextTokens = dedupeTokensCaseInsensitive(
+        tokenizeWords([contextLabel, sourceText].filter(Boolean).join(' '))
+            .filter((token) => token.length > 2),
+    );
+
+    const finalTokens = fillTokensToTarget(
+        tokens.slice(0, TARGET_BULLET_WORDS),
+        TARGET_BULLET_WORDS,
+        [contextTokens, BULLET_FALLBACK_TOKENS],
+    );
+
+    if (!ACTION_VERB_SET.has(String(finalTokens[0] || '').toLowerCase())) {
+        finalTokens[0] = requiredVerb;
+    } else {
+        const normalizedVerb = ACTION_VERBS.find((verb) => verb.toLowerCase() === String(finalTokens[0] || '').toLowerCase());
+        finalTokens[0] = normalizedVerb || requiredVerb;
+    }
+
+    return finalTokens.slice(0, TARGET_BULLET_WORDS).join(' ');
+};
+
 const normalizeToLines = (value = '') =>
     normalizeLineBreaks(value)
         .split('\n')
@@ -67,6 +462,16 @@ const normalizeToSentences = (value = '') =>
         .split(/(?<=[.!?])\s+/)
         .map((line) => line.trim())
         .filter(Boolean);
+
+const isSummaryFormatCompliant = (value = '') => {
+    const lines = normalizeToLines(value);
+    if (lines.length !== TARGET_SUMMARY_LINES) {
+        return false;
+    }
+
+    const wordCount = tokenizeWords(lines.join(' ')).length;
+    return wordCount >= TARGET_SUMMARY_MIN_WORDS && wordCount <= TARGET_SUMMARY_MAX_WORDS;
+};
 
 const dedupeLines = (lines = []) => {
     const seen = new Set();
@@ -193,46 +598,71 @@ const extractInternshipLabels = (resumeData = {}) =>
         })
         .filter(Boolean);
 
+const deriveProfessionalTitle = (resumeData = {}) => {
+    const explicitTitle = compactToOneLine(resumeData?.personalDetails?.title || '');
+    if (explicitTitle) {
+        return explicitTitle;
+    }
+
+    const firstWorkRole = compactToOneLine(
+        (Array.isArray(resumeData?.workExperience) ? resumeData.workExperience : [])[0]?.role || '',
+    );
+    if (firstWorkRole) {
+        return firstWorkRole;
+    }
+
+    const firstInternRole = compactToOneLine(
+        (Array.isArray(resumeData?.internships) ? resumeData.internships : [])[0]?.role || '',
+    );
+    if (firstInternRole) {
+        return firstInternRole;
+    }
+
+    return 'Technology Professional';
+};
+
 const buildSummaryGeneratorLines = (resumeData = {}) => {
-    const title = compactToOneLine(resumeData?.personalDetails?.title || '');
+    const title = deriveProfessionalTitle(resumeData);
     const skills = normalizeSkills(resumeData?.skills).slice(0, 6);
     const workLabels = extractWorkLabels(resumeData);
     const projectLabels = extractProjectLabels(resumeData);
     const internshipLabels = extractInternshipLabels(resumeData);
     const certifications = normalizeOneLineList(resumeData?.certifications).slice(0, 4);
     const achievements = normalizeOneLineList(resumeData?.achievements).slice(0, 3);
+    const workText = toDisplayList(workLabels, 2);
+    const projectText = toDisplayList(projectLabels, 2);
+    const internshipText = toDisplayList(internshipLabels, 2);
 
     const generated = [];
 
-    if (title) {
-        generated.push(`Target role focus: ${title}.`);
-    }
+    generated.push(`${title} focused on delivering reliable and scalable software solutions through disciplined engineering execution.`);
 
     if (skills.length) {
-        generated.push(`Core skills: ${skills.join(', ')}.`);
+        generated.push(`Core technical strengths include ${skills.join(', ')}, applied to maintainable architecture and quality-focused implementation.`);
+    } else {
+        generated.push('Core strengths include modern engineering workflows, code quality standards, testing discipline, and dependable delivery practices.');
     }
 
-    const workText = toDisplayList(workLabels, 3);
     if (workText) {
-        generated.push(`Professional experience includes ${workText}.`);
+        generated.push(`Professional experience includes ${workText}, driving feature implementation, integrations, and continuous improvement.`);
+    } else if (internshipText) {
+        generated.push(`Internship experience includes ${internshipText}, supporting implementation, testing, collaboration, and production readiness.`);
+    } else if (projectText) {
+        generated.push(`Project experience includes ${projectText}, translating requirements into stable and maintainable software outcomes.`);
     }
 
-    const projectText = toDisplayList(projectLabels, 3);
     if (projectText) {
-        generated.push(`Project experience includes ${projectText}.`);
-    }
-
-    const internshipText = toDisplayList(internshipLabels, 2);
-    if (internshipText) {
-        generated.push(`Internship exposure includes ${internshipText}.`);
+        generated.push(`Project contributions include ${projectText}, demonstrating ownership, problem resolution, documentation, and iterative optimization.`);
+    } else {
+        generated.push('Committed to continuous learning, collaborative delivery, and measurable value aligned with target role expectations.');
     }
 
     if (certifications.length) {
-        generated.push(`Certifications include ${certifications.join(', ')}.`);
+        generated.push(`Certifications include ${certifications.join(', ')}, reinforcing relevant technical depth and professional standards.`);
     }
 
     if (achievements.length) {
-        generated.push(`Achievements include ${achievements.join(', ')}.`);
+        generated.push(`Achievements include ${achievements.join(', ')}, reflecting consistent outcomes and accountable execution.`);
     }
 
     return dedupeLines(generated.map((line) => ensureSentenceEnding(line)).filter(Boolean));
@@ -282,6 +712,18 @@ const fillToFixedLineCount = (lines = [], target = 4, fallbackLines = [], option
 
 const normalizeSummary = (value = '', resumeData = {}) => {
     const cleaned = normalizeLineBreaks(value).replace(/^[\u2022*-]+\s*/gm, '');
+
+    if (isSummaryFormatCompliant(cleaned)) {
+        return normalizeToLines(cleaned)
+            .slice(0, TARGET_SUMMARY_LINES)
+            .map((line) => ensureSentenceEnding(line))
+            .join('\n');
+    }
+
+    if (!cleaned) {
+        return buildContextDrivenSummary(resumeData);
+    }
+
     const primaryLines = cleaned ? normalizeToLines(cleaned) : [];
     const candidateLines = primaryLines.length ? primaryLines : normalizeToSentences(cleaned);
     const fallbackLines = buildSummaryFallbackLines(resumeData);
@@ -301,7 +743,7 @@ const normalizeSummary = (value = '', resumeData = {}) => {
         { allowVerbRewrites: false },
     );
 
-    return finalLines.join('\n');
+    return enforceSummaryFormat(finalLines, resumeData);
 };
 
 const toCandidateDescriptionLines = (value = '') => {
@@ -373,7 +815,12 @@ const normalizeBulletList = ({ bullets = [], text = '', fallbackText = '', conte
     return fillToFixedLineCount(mergedLines, TARGET_BULLET_LINES, buildContextFallbackBullets(contextLabel), {
         allowVerbRewrites: true,
     })
-        .map((line) => normalizeBulletItem(line));
+        .map((line) =>
+            enforceBulletWordCount(normalizeBulletItem(line), {
+                contextLabel,
+                sourceText: [text, fallbackText].filter(Boolean).join(' '),
+            }),
+        );
 };
 
 const normalizeWorkExperienceSection = ({ payloadItems, sourceItems }) => {
@@ -586,15 +1033,42 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
     const normalizedContext = normalizeFeedbackContext(feedbackContext);
     const resumeSearchText = buildResumeSearchText(resumeData);
     const aiMissingKeywords = filterTermsNotInResume(
-        [safeAtsFeedback.missingKeywords, safePayload.missingKeywords],
+        [safeAtsFeedback.missingKeywords, safePayload.missingKeywords, normalizedContext.missingKeywords],
         resumeSearchText,
         25,
     );
     const aiMissingSkills = filterTermsNotInResume(
-        [safeAtsFeedback.missingSkills, safePayload.missingSkills],
+        [safeAtsFeedback.missingSkills, safePayload.missingSkills, normalizedContext.missingSkills],
         resumeSearchText,
         20,
     );
+    const whyScoreIsLower = ensureArrayOfStrings(
+        safeAtsFeedback.whyScoreIsLower || safeAtsFeedback.scoreGaps || safePayload.whyScoreIsLower,
+    ).slice(0, 8);
+    const improvementSteps = ensureArrayOfStrings(
+        safeAtsFeedback.improvementSteps || safeAtsFeedback.actions || safePayload.improvementSteps,
+    ).slice(0, 8);
+
+    if (!whyScoreIsLower.length) {
+        if (aiMissingSkills.length) {
+            whyScoreIsLower.push('Required technical skills from the job description are missing from resume sections.');
+        }
+        if (aiMissingKeywords.length) {
+            whyScoreIsLower.push('Important job-description keywords are not represented in summary, projects, or experience.');
+        }
+    }
+
+    if (!improvementSteps.length) {
+        if (aiMissingSkills[0]) {
+            improvementSteps.push(`Add ${aiMissingSkills[0]} in skills section.`);
+        }
+        if (aiMissingKeywords[0]) {
+            improvementSteps.push(`Use ${aiMissingKeywords[0]} in summary or experience bullet points.`);
+        }
+        if (aiMissingKeywords[1]) {
+            improvementSteps.push(`Include ${aiMissingKeywords[1]} in project descriptions aligned with the target role.`);
+        }
+    }
 
     return {
         summary: normalizeSummary(safePayload.summary, resumeData),
@@ -639,14 +1113,10 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
                     normalizedContext.atsScore ??
                     '',
             ).trim(),
-            whyScoreIsLower: ensureArrayOfStrings(
-                safeAtsFeedback.whyScoreIsLower || safeAtsFeedback.scoreGaps || safePayload.whyScoreIsLower,
-            ).slice(0, 8),
+            whyScoreIsLower,
             missingKeywords: aiMissingKeywords,
             missingSkills: aiMissingSkills,
-            improvementSteps: ensureArrayOfStrings(
-                safeAtsFeedback.improvementSteps || safeAtsFeedback.actions || safePayload.improvementSteps,
-            ).slice(0, 8),
+            improvementSteps,
         },
     };
 };
@@ -696,30 +1166,47 @@ const buildResumeImprovePrompt = ({ resumeData, feedbackContext }) => {
     const missingKeywordsPreview = toSafeAiJson(safeContext.missingKeywords, 1_500);
     const missingSkillsPreview = toSafeAiJson(safeContext.missingSkills, 1_500);
 
-    return `You are a senior professional resume writing expert.
+    return `You are an elite ATS resume writer and professional technical resume optimizer.
 
-Your task is to enhance the resume content provided by the user inside a resume builder application and provide actionable ATS-alignment feedback.
+Your task is to enhance resume content for a resume builder UI rendered directly in A4 templates.
 
-Rules:
-1. Use only user-provided resume data.
-2. Do not invent experience, tools, projects, metrics, or claims.
-3. Keep language concise, ATS-optimized, and professional.
-4. Summary must be exactly 4 meaningful lines.
-5. Summary must be based on title, skills, and provided project/internship/experience data.
-6. For each work experience item, return exactly 3 bullets.
-7. For each project item, return exactly 3 bullets.
-8. For each internship item, return exactly 3 bullets.
-9. Every bullet must start with a strong action verb (Delivered, Engineered, Implemented, Optimized, Architected, Streamlined, Automated, Integrated, Developed, Deployed, Enhanced).
-10. Every bullet must be one line and should use tools/technologies already present in user data when available.
-11. Keep item order exactly the same as input.
-12. If an input section is empty, return an empty array for that section.
-13. Certifications, achievements, and hobbies must be concise single-line entries.
-14. Normalize skills (dedupe and clean naming) without adding new skills.
-15. Keep formatting clean with no symbols or markdown.
-16. Return valid JSON only.
-17. Generate "atsFeedback" using resume + job description context.
-18. "missingKeywords" and "missingSkills" must be practical items that are absent or weakly represented.
-19. Keep ATS feedback specific and concise.
+GLOBAL FORMAT RULES:
+1. Use powerful, modern, ATS-optimized vocabulary.
+2. Do not invent experience.
+3. Do not add fake metrics.
+4. Use only the data provided.
+5. Keep section order exactly the same.
+6. Maintain clean and consistent structure for all templates.
+7. Return valid JSON only.
+
+SUMMARY RULES (STRICT):
+1. Exactly 4 lines.
+2. Total summary length must be 45 to 47 words.
+3. Use job title, skills, projects, internships, and experience context.
+4. Keep tone impactful and ATS-optimized with no keyword stuffing.
+5. Keep lines compact for A4 width.
+
+BULLET RULES (STRICT):
+1. For each work experience, project, and internship item return exactly 3 bullets.
+2. Each bullet must contain exactly 15 words.
+3. Each bullet must start with a strong action verb.
+4. Keep each bullet compact for single-line A4 rendering.
+5. Include technology, task, and result naturally without fabrication.
+
+SKILLS RULES:
+1. Keep only relevant technical skills.
+2. Use ATS-friendly grouping language.
+3. Normalize names: React => ReactJS, Node => NodeJS, Mongo => MongoDB, JS => JavaScript.
+
+ACHIEVEMENTS / CERTIFICATIONS / HOBBIES:
+1. Keep each item to one clean professional line.
+
+ADDITIONAL RULES:
+1. If an input section is empty, return an empty array for that section.
+2. Keep formatting clean, no markdown, no decorative symbols.
+3. Generate atsFeedback using resume and job description context.
+4. missingKeywords and missingSkills must be practical, absent, or weakly represented.
+5. Keep feedback concise and specific.
 
 Input:
 resumeData: ${resumeDataPreview}
@@ -732,27 +1219,27 @@ knownMissingSkills: ${missingSkillsPreview}
 
 Return JSON in this exact schema:
 {
-  "summary": "string",
+  "summary": "4 lines only with total 45-47 words",
   "workExperience": [
     {
       "company": "string",
       "role": "string",
-      "bullets": ["string"]
+      "bullets": ["15 words exactly"]
     }
   ],
   "projects": [
     {
       "title": "string",
-      "bullets": ["string"]
+      "bullets": ["15 words exactly"]
     }
   ],
   "internships": [
     {
       "company": "string",
-      "bullets": ["string"]
+      "bullets": ["15 words exactly"]
     }
   ],
- "skills": ["string"],
+  "skills": ["string"],
   "certifications": ["string"],
   "achievements": ["string"],
   "hobbies": ["string"],
