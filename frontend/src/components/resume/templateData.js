@@ -12,65 +12,20 @@ const normalizeMultiline = (value) =>
         .replace(/\r\n/g, '\n')
         .replace(/\r/g, '\n');
 
-const truncateSummary = (text, maxLines = 4, maxCharsPerLine = 170) => {
-    if (!text) return '';
-
-    const normalizedText = normalizeMultiline(text);
-    const explicitLines = normalizedText
-        .split('\n')
-        .map((line) => cleanOneLine(line))
-        .filter(Boolean);
-
-    const sentenceLines = normalizedText
-        .replace(/\n/g, ' ')
-        .split(/(?<=[.!?])\s+/)
-        .map((line) => cleanOneLine(line))
-        .filter(Boolean);
-
-    const clauseLines = normalizedText
-        .replace(/\n/g, ' ')
-        .split(/[,;]\s+/)
-        .map((line) => cleanOneLine(line))
-        .filter(Boolean);
-
-    const merged = [];
-    const pushUnique = (line) => {
-        const value = cleanOneLine(line);
-        if (!value) {
-            return;
-        }
-        if (!merged.some((item) => item.toLowerCase() === value.toLowerCase())) {
-            merged.push(value);
-        }
-    };
-
-    explicitLines.forEach(pushUnique);
-    sentenceLines.forEach(pushUnique);
-    clauseLines.forEach(pushUnique);
-
-    if (!merged.length) {
+const normalizeSummaryText = (text) => {
+    if (!text) {
         return '';
     }
 
-    const finalLines = merged
-        .map((line) => {
-            const trimmed = line.slice(0, maxCharsPerLine).trim();
-            if (!trimmed) {
-                return '';
-            }
-            return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
-        })
-        .filter(Boolean);
-
-    const fixedLines = [...finalLines];
-    const seedLines = [...finalLines];
-    let cursor = 0;
-    while (fixedLines.length < maxLines && seedLines.length) {
-        fixedLines.push(seedLines[cursor % seedLines.length]);
-        cursor += 1;
+    const normalizedText = normalizeMultiline(text)
+        .replace(/\n+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!normalizedText) {
+        return '';
     }
 
-    return fixedLines.slice(0, maxLines).join('\n');
+    return /[.!?]$/.test(normalizedText) ? normalizedText : `${normalizedText}.`;
 };
 
 const summaryToParagraph = (value = '') =>
@@ -146,7 +101,7 @@ const normalizePersonalDetails = (value = {}) => ({
     email: clean(value.email),
     phone: clean(value.phone),
     location: clean(value.location),
-    summary: summaryToParagraph(truncateSummary(normalizeMultiline(value.summary), 4, 400)),
+    summary: summaryToParagraph(normalizeSummaryText(value.summary)),
     linkedin: clean(value.linkedin),
     website: clean(value.website),
     photo: clean(value.photo),

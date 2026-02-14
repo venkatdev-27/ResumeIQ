@@ -6,6 +6,9 @@ const TARGET_SUMMARY_LINES = 4;
 const TARGET_SUMMARY_MIN_WORDS = 45;
 const TARGET_SUMMARY_MAX_WORDS = 47;
 const TARGET_SUMMARY_WORDS = 46;
+const LIVE_PREVIEW_SUMMARY_MIN_WORDS = 45;
+const LIVE_PREVIEW_SUMMARY_MAX_WORDS = 47;
+const LIVE_PREVIEW_SUMMARY_TARGET_WORDS = 46;
 
 const TARGET_BULLET_LINES = 3;
 const TARGET_BULLET_WORDS = 14;
@@ -13,6 +16,7 @@ const TARGET_SHORT_LIST_ITEMS = 20;
 const IMPROVEMENT_MODES = Object.freeze({
     FULL: 'full',
     ATS_ONLY: 'ats_only',
+    SUMMARY_PREVIEW: 'summary_preview',
 });
 const ATS_TARGET_SECTION_KEYS = new Set(['summary', 'workExperience', 'projects', 'internships']);
 const RESUME_TEXT_SECTION_MATCHERS = [
@@ -31,16 +35,16 @@ const RESUME_TEXT_NON_TARGET_HEADERS = [
 ];
 const ACTION_VERBS = ['Delivered', 'Engineered', 'Implemented', 'Optimized', 'Architected', 'Streamlined', 'Automated', 'Integrated', 'Developed', 'Deployed', 'Enhanced'];
 const SUMMARY_FALLBACK_TOKENS = [
-    'enterprise',
-    'platforms',
-    'automation',
-    'scalability',
+    'execution',
     'reliability',
-    'optimization',
+    'consistency',
     'delivery',
-    'architecture',
     'quality',
     'collaboration',
+    'impact',
+    'outcomes',
+    'alignment',
+    'ownership',
 ];
 const DEFAULT_PROFESSIONAL_SUMMARY_LINES = [
     'Technology professional delivering reliable software solutions through hands-on, collaborative development and improvement.',
@@ -122,9 +126,16 @@ const ensureArrayOfStrings = (value) =>
 const ensureObject = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
 const normalizeImprovementMode = (value = '') => {
     const mode = String(value || '').trim().toLowerCase();
-    return mode === IMPROVEMENT_MODES.ATS_ONLY ? IMPROVEMENT_MODES.ATS_ONLY : IMPROVEMENT_MODES.FULL;
+    if (mode === IMPROVEMENT_MODES.ATS_ONLY) {
+        return IMPROVEMENT_MODES.ATS_ONLY;
+    }
+    if (mode === IMPROVEMENT_MODES.SUMMARY_PREVIEW) {
+        return IMPROVEMENT_MODES.SUMMARY_PREVIEW;
+    }
+    return IMPROVEMENT_MODES.FULL;
 };
 const isAtsOnlyMode = (value = '') => normalizeImprovementMode(value) === IMPROVEMENT_MODES.ATS_ONLY;
+const isSummaryPreviewMode = (value = '') => normalizeImprovementMode(value) === IMPROVEMENT_MODES.SUMMARY_PREVIEW;
 
 const hasAnyText = (...values) => values.some((value) => Boolean(String(value || '').trim()));
 
@@ -561,13 +572,15 @@ const pickEndingToken = (lineWordKeys = new Set(), usedWordKeys = new Set()) => 
 const buildSummaryContextTokens = (resumeData = {}) => {
     const safeResumeData = ensureObject(resumeData);
     const personal = ensureObject(safeResumeData.personalDetails);
+    const hasWorkContext = Array.isArray(safeResumeData.workExperience) && safeResumeData.workExperience.length > 0;
+    const hasProjectContext = Array.isArray(safeResumeData.projects) && safeResumeData.projects.length > 0;
+    const hasInternshipContext = Array.isArray(safeResumeData.internships) && safeResumeData.internships.length > 0;
 
     const sources = [
         personal.title,
-        ...ensureArrayOfStrings(safeResumeData.skills),
-        ...((Array.isArray(safeResumeData.workExperience) ? safeResumeData.workExperience : []).flatMap((item) => [item?.role, item?.company])),
-        ...((Array.isArray(safeResumeData.projects) ? safeResumeData.projects : []).flatMap((item) => [item?.name, item?.techStack])),
-        ...((Array.isArray(safeResumeData.internships) ? safeResumeData.internships : []).flatMap((item) => [item?.role, item?.company])),
+        hasWorkContext ? 'professional experience implementation delivery outcomes execution' : '',
+        hasProjectContext ? 'project context integration enhancement reliability maintainability outcomes' : '',
+        hasInternshipContext ? 'internship context collaboration testing execution delivery consistency' : '',
     ];
 
     return dedupeTokensCaseInsensitive(
@@ -658,18 +671,16 @@ const fitSummaryLinesToWordRange = (lines = [], options = {}) => {
         totalWords = summaryWordCount(seeded.join(' '));
     }
 
-    return seeded.slice(0, TARGET_SUMMARY_LINES).map((line) => ensureSentenceEnding(line));
+    return seeded.slice(0, TARGET_SUMMARY_LINES).map((line) => ensureStrongSummaryLineEnding(line));
 };
 
 const buildContextDrivenSummary = (resumeData = {}) => {
     const title = pickLabelTokens(deriveProfessionalTitle(resumeData), 2).join(' ') || 'Technology Professional';
-    const summarySkills = normalizeSkills(resumeData?.skills).slice(0, 4);
     const workLabel = toDisplayList(extractWorkLabels(resumeData), 1);
     const internshipLabel = toDisplayList(extractInternshipLabels(resumeData), 1);
     const projectLabel = toDisplayList(extractProjectLabels(resumeData), 1);
     const hasContextData =
         Boolean(compactToOneLine(resumeData?.personalDetails?.title || '')) ||
-        summarySkills.length > 0 ||
         hasAnyText(workLabel) ||
         hasAnyText(internshipLabel) ||
         hasAnyText(projectLabel);
@@ -679,26 +690,21 @@ const buildContextDrivenSummary = (resumeData = {}) => {
     }
 
     const lines = [];
-    lines.push(`${title} delivering scalable software solutions through disciplined execution and business value.`);
-
-    if (summarySkills.length) {
-        lines.push(`Core skills include ${summarySkills.join(', ')}, enabling maintainable architecture and efficient delivery.`);
-    } else {
-        lines.push('Core capabilities include maintainable architecture, reliable integration patterns, testing rigor, and quality-focused delivery.');
-    }
+    lines.push(`${title} delivering reliable application features through structured implementation and collaborative execution.`);
+    lines.push('Core strengths include structured execution, quality delivery, and continuous improvement across responsibilities.');
 
     if (workLabel) {
-        lines.push(`Experience includes ${workLabel}, leading implementation, testing, integration, and continuous optimization.`);
+        lines.push('Professional experience includes translating requirements into stable releases with documentation and testing discipline.');
     } else if (internshipLabel) {
-        lines.push(`Internship exposure includes ${internshipLabel}, supporting implementation, testing, collaboration, and dependable execution.`);
+        lines.push('Internship exposure includes supporting implementation cycles, testing quality, and dependable execution across delivery milestones.');
     } else {
         lines.push('Experience demonstrates implementation ownership, structured problem-solving, documentation quality, and measurable delivery consistency.');
     }
 
-    if (projectLabel) {
-        lines.push(`Projects include ${projectLabel}, demonstrating ownership, communication, adaptability, and dependable stakeholder alignment.`);
+    if (projectLabel || workLabel || internshipLabel) {
+        lines.push('Delivers integration-focused enhancement with consistent delivery and measurable business outcomes.');
     } else {
-        lines.push('Projects and internships demonstrate ownership, communication, adaptability, and dependable stakeholder alignment.');
+        lines.push('Delivers measurable professional impact through disciplined execution, dependable collaboration, and role-aligned business outcomes.');
     }
 
     return fitSummaryLinesToWordRange(lines).join('\n');
@@ -754,7 +760,7 @@ const enforceSummaryFormat = (lines = [], resumeData = {}) => {
             baseTokensForLine.push(nextPoolToken());
         }
 
-        renderedLines.push(ensureSentenceEnding(baseTokensForLine.join(' ').trim()));
+        renderedLines.push(ensureStrongSummaryLineEnding(baseTokensForLine.join(' ').trim()));
     }
 
     return renderedLines.slice(0, TARGET_SUMMARY_LINES).join('\n');
@@ -943,6 +949,45 @@ const ensureSentenceEnding = (value = '') => {
     return /[.!?]$/.test(line) ? line : `${line}.`;
 };
 
+const SUMMARY_WEAK_ENDING_WORDS = new Set([
+    'and',
+    'or',
+    'with',
+    'while',
+    'through',
+    'across',
+    'into',
+    'for',
+    'to',
+    'from',
+    'of',
+    'in',
+    'on',
+    'at',
+    'by',
+    'as',
+]);
+
+const ensureStrongSummaryLineEnding = (value = '') => {
+    const normalized = compactToOneLine(value).replace(/[.!?]+$/, '').trim();
+    if (!normalized) {
+        return '';
+    }
+
+    const tokens = normalized.split(/\s+/).filter(Boolean);
+    if (!tokens.length) {
+        return '';
+    }
+
+    const lastIndex = tokens.length - 1;
+    const lastWord = String(tokens[lastIndex] || '').toLowerCase();
+    if (SUMMARY_WEAK_ENDING_WORDS.has(lastWord)) {
+        tokens[lastIndex] = 'effectively';
+    }
+
+    return ensureSentenceEnding(tokens.join(' '));
+};
+
 const lowerFirst = (value = '') => {
     const text = String(value || '');
     if (!text) {
@@ -1041,46 +1086,30 @@ const deriveProfessionalTitle = (resumeData = {}) => {
 
 const buildSummaryGeneratorLines = (resumeData = {}) => {
     const title = deriveProfessionalTitle(resumeData);
-    const skills = normalizeSkills(resumeData?.skills).slice(0, 6);
     const workLabels = extractWorkLabels(resumeData);
     const projectLabels = extractProjectLabels(resumeData);
     const internshipLabels = extractInternshipLabels(resumeData);
-    const certifications = normalizeOneLineList(resumeData?.certifications).slice(0, 4);
-    const achievements = normalizeOneLineList(resumeData?.achievements).slice(0, 3);
     const workText = toDisplayList(workLabels, 2);
-    const projectText = toDisplayList(projectLabels, 2);
+    const hasProjectContext = projectLabels.length > 0;
     const internshipText = toDisplayList(internshipLabels, 2);
 
     const generated = [];
 
-    generated.push(`${title} focused on delivering reliable and scalable software solutions through disciplined engineering execution.`);
-
-    if (skills.length) {
-        generated.push(`Core technical strengths include ${skills.join(', ')}, applied to maintainable architecture and quality-focused implementation.`);
-    } else {
-        generated.push('Core strengths include modern engineering workflows, code quality standards, testing discipline, and dependable delivery practices.');
-    }
+    generated.push(`${title} delivering reliable application features through structured implementation and collaborative execution.`);
+    generated.push('Core strengths include structured execution, quality delivery, and continuous improvement across responsibilities.');
 
     if (workText) {
-        generated.push(`Professional experience includes ${workText}, driving feature implementation, integrations, and continuous improvement.`);
+        generated.push('Professional experience includes translating requirements into stable releases with documentation and testing discipline.');
     } else if (internshipText) {
-        generated.push(`Internship experience includes ${internshipText}, supporting implementation, testing, collaboration, and production readiness.`);
-    } else if (projectText) {
-        generated.push(`Project experience includes ${projectText}, translating requirements into stable and maintainable software outcomes.`);
+        generated.push('Internship experience includes supporting implementation cycles, testing quality, and dependable execution across delivery milestones.');
+    } else if (hasProjectContext) {
+        generated.push('Project experience includes translating requirements into stable releases with structured implementation and quality-focused execution.');
     }
 
-    if (projectText) {
-        generated.push(`Project contributions include ${projectText}, demonstrating ownership, problem resolution, documentation, and iterative optimization.`);
+    if (hasProjectContext || workText || internshipText) {
+        generated.push('Delivers integration-focused enhancement with consistent delivery and measurable business outcomes.');
     } else {
-        generated.push('Committed to continuous learning, collaborative delivery, and measurable value aligned with target role expectations.');
-    }
-
-    if (certifications.length) {
-        generated.push(`Certifications include ${certifications.join(', ')}, reinforcing relevant technical depth and professional standards.`);
-    }
-
-    if (achievements.length) {
-        generated.push(`Achievements include ${achievements.join(', ')}, reflecting consistent outcomes and accountable execution.`);
+        generated.push('Delivers measurable professional impact through disciplined execution, dependable collaboration, and role-aligned business outcomes.');
     }
 
     return dedupeLines(generated.map((line) => ensureSentenceEnding(line)).filter(Boolean));
@@ -1783,6 +1812,139 @@ const extractJsonCandidate = (text) => {
     return tryParseJson(cleaned.slice(firstBrace, lastBrace + 1));
 };
 
+const LIVE_PREVIEW_SUMMARY_EXTENSION_SENTENCES = [
+    'Delivered measurable professional impact through structured execution, accountable collaboration, and consistent business outcomes.',
+    'Contributed to integration and iterative enhancement across delivery cycles while maintaining dependable release quality.',
+    'Strengthened implementation reliability through documentation discipline, testing consistency, and role-aligned execution ownership.',
+];
+
+const normalizeLivePreviewParagraph = (value = '') =>
+    compactToOneLine(value)
+        .replace(/^[\u2022*-]+\s*/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+const livePreviewSummaryWordCount = (value = '') => tokenizeWords(value).length;
+
+const trimLivePreviewSummaryToMaxWords = (value = '') => {
+    const words = compactToOneLine(value)
+        .split(/\s+/)
+        .filter(Boolean);
+    if (!words.length) {
+        return '';
+    }
+
+    return ensureSentenceEnding(words.slice(0, LIVE_PREVIEW_SUMMARY_MAX_WORDS).join(' '));
+};
+
+const fitLivePreviewSummaryWordRange = (value = '', resumeData = {}) => {
+    let summary = normalizeLivePreviewParagraph(value);
+    if (!summary) {
+        return '';
+    }
+
+    let totalWords = livePreviewSummaryWordCount(summary);
+    let extensionIndex = 0;
+    while (totalWords < LIVE_PREVIEW_SUMMARY_MIN_WORDS && extensionIndex < LIVE_PREVIEW_SUMMARY_EXTENSION_SENTENCES.length) {
+        summary = `${summary} ${LIVE_PREVIEW_SUMMARY_EXTENSION_SENTENCES[extensionIndex]}`;
+        totalWords = livePreviewSummaryWordCount(summary);
+        extensionIndex += 1;
+    }
+
+    if (totalWords < LIVE_PREVIEW_SUMMARY_MIN_WORDS) {
+        const role = deriveProfessionalTitle(resumeData) || 'Technology Professional';
+        summary = `${summary} Delivered sustained value as ${role} through disciplined implementation, collaborative execution, and measurable professional outcomes.`;
+        totalWords = livePreviewSummaryWordCount(summary);
+    }
+
+    if (totalWords > LIVE_PREVIEW_SUMMARY_MAX_WORDS) {
+        return trimLivePreviewSummaryToMaxWords(summary);
+    }
+
+    if (totalWords < LIVE_PREVIEW_SUMMARY_TARGET_WORDS) {
+        summary = `${summary} Delivered measurable outcomes aligned with product goals and long-term business priorities.`;
+    }
+
+    return trimLivePreviewSummaryToMaxWords(summary);
+};
+
+const normalizeLivePreviewSummary = (value = '', resumeData = {}) => {
+    const normalized = normalizeLineBreaks(value).replace(/^[\u2022*-]+\s*/gm, '').trim();
+    if (!normalized) {
+        return '';
+    }
+
+    return normalizeSummary(normalized, resumeData);
+};
+
+const buildLivePreviewSummaryFallback = (resumeData = {}) => {
+    return normalizeSummary('', resumeData);
+};
+
+const buildSummaryPreviewResponse = (summary = '') => ({
+    summary,
+    workExperience: [],
+    projects: [],
+    internships: [],
+    skills: [],
+    certifications: [],
+    achievements: [],
+    hobbies: [],
+    atsFeedback: {
+        currentScore: '',
+        whyScoreIsLower: [],
+        missingKeywords: [],
+        missingSkills: [],
+        improvementSteps: [],
+    },
+});
+
+const buildLivePreviewSummaryPrompt = ({ resumeData }) => {
+    const targetRole = deriveProfessionalTitle(resumeData) || compactToOneLine(resumeData?.personalDetails?.title || '') || 'Not specified';
+    const resumeDataPreview = toSafeAiJson(resumeData, 10_000);
+
+    return `You are an elite ATS resume strategist writing a professional summary for resume builder live preview.
+
+SUMMARY RULES (STRICT):
+1. Exactly 4 lines.
+2. Total summary length must be 45 to 47 words.
+3. Use only job title and experience, project, or internship context.
+4. Do NOT mention skills, tools, or technologies.
+5. Write with high-impact ATS vocabulary and measurable professional intent.
+6. Keep tone concise, modern, and role-focused.
+7. Each line must be compact for single-line A4 rendering.
+8. End with a complete, grammatically strong professional sentence.
+
+Example style:
+"Results-driven Software Developer delivering reliable application features through structured implementation and collaborative execution. Experience includes translating requirements into stable releases with strong documentation and testing discipline. Contributes to integration and iterative enhancement across development cycles while ensuring maintainable architecture and consistent delivery aligned with business outcomes."
+
+OUTPUT RULES:
+1. Return valid JSON only.
+2. Return exactly this schema:
+{
+  "summary": "4 lines only with total 45-47 words"
+}
+
+Input:
+targetRole: ${targetRole}
+resumeData: ${resumeDataPreview}`;
+};
+
+const parseSummaryPreviewResponse = (rawText = '', resumeData = {}) => {
+    const parsed = extractJsonCandidate(rawText);
+    const candidateSummary =
+        typeof parsed === 'string'
+            ? parsed
+            : typeof parsed?.summary === 'string'
+                ? parsed.summary
+                : '';
+    const normalized = normalizeLivePreviewSummary(candidateSummary, resumeData);
+    if (!normalized) {
+        throw new AppError('AI response is missing summary.', 502);
+    }
+
+    return normalized;
+};
 
 
 
@@ -1812,9 +1974,15 @@ GLOBAL FORMAT RULES:
 SUMMARY RULES (STRICT):
 1. Exactly 4 lines.
 2. Total summary length must be 45 to 47 words.
-3. Use job title, skills, projects, internships, and experience context.
-4. Keep tone impactful and ATS-optimized with no keyword stuffing.
-5. Keep lines compact for A4 width.
+3. Use only job title and experience, project, or internship context.
+4. Do NOT mention skills, tools, or technologies.
+5. Write with high-impact ATS vocabulary and measurable professional intent.
+6. Keep tone concise, modern, and role-focused.
+7. Each line must be compact for single-line A4 rendering.
+8. End with a complete, grammatically strong professional sentence.
+
+SUMMARY EXAMPLE (STYLE REFERENCE):
+"Results-driven Software Developer delivering reliable application features through structured implementation and collaborative execution. Experience includes translating requirements into stable releases with strong documentation and testing discipline. Contributes to integration and iterative enhancement across development cycles while ensuring maintainable architecture and consistent delivery aligned with business outcomes."
 
 BULLET RULES (STRICT):
 1. For each work experience, project, and internship item return exactly 3 bullets.
@@ -2100,6 +2268,7 @@ const improveResumeWithAI = async ({
 }) => {
     const normalizedMode = normalizeImprovementMode(mode);
     const atsOnly = isAtsOnlyMode(normalizedMode);
+    const summaryPreview = isSummaryPreviewMode(normalizedMode);
     const normalizedResumeData = atsOnly
         ? buildAtsOnlyResumeData({
               resumeData,
@@ -2114,6 +2283,26 @@ const improveResumeWithAI = async ({
         missingKeywords,
         missingSkills,
     });
+
+    if (summaryPreview) {
+        const prompt = buildLivePreviewSummaryPrompt({
+            resumeData: normalizedResumeData,
+        });
+
+        try {
+            const responseText = await requestChatCompletion({
+                messages: [{ role: 'user', content: prompt }],
+                jsonMode: true,
+                expectJson: true,
+                maxTokens: 500,
+            });
+
+            const summary = parseSummaryPreviewResponse(responseText, normalizedResumeData);
+            return buildSummaryPreviewResponse(summary);
+        } catch (_error) {
+            return buildSummaryPreviewResponse(buildLivePreviewSummaryFallback(normalizedResumeData));
+        }
+    }
 
     const prompt = atsOnly
         ? buildAtsOnlyResumeImprovePrompt({

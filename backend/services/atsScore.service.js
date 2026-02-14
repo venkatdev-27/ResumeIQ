@@ -20,6 +20,8 @@ const MAX_RECOMMENDATIONS = 12;
 const MAX_AI_RESUME_TEXT_CHARS = 5000;
 const MAX_AI_JD_TEXT_CHARS = 4500;
 const MAX_AI_LIST_PREVIEW = 80;
+const WEAK_TECHNICAL_OCCURRENCE_THRESHOLD = 1;
+const WEAK_VOCAB_OCCURRENCE_THRESHOLD = 0;
 
 const ensureObject = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
 
@@ -52,6 +54,29 @@ const normalizeRecommendationList = (values = [], max = MAX_RECOMMENDATIONS) => 
             return true;
         })
         .slice(0, max);
+};
+
+const ensurePrioritizedGapList = ({ candidates = [], preferred = [], max = MAX_OUTPUT_LIST }) => {
+    const candidateSet = new Set(dedupeNormalizedKeywords(candidates, max));
+    if (!candidateSet.size) {
+        return [];
+    }
+
+    const ordered = [];
+    const pushIfPresent = (keyword = '') => {
+        const normalized = normalizeKeywordTerm(keyword);
+        if (!normalized || !candidateSet.has(normalized)) {
+            return;
+        }
+        if (!ordered.includes(normalized)) {
+            ordered.push(normalized);
+        }
+    };
+
+    (Array.isArray(preferred) ? preferred : []).forEach(pushIfPresent);
+    [...candidateSet].forEach(pushIfPresent);
+
+    return ordered.slice(0, max);
 };
 
 const parseJsonCandidate = (value = '') => {
@@ -610,10 +635,53 @@ const calculateAtsScore = async ({
         return resumeSet.has(key);
     };
 
-    const allMissingKeywords = jobDescriptionKeywords.filter((keyword) => !isKeywordPresentInResume(keyword));
-    const matchedKeywords = jobDescriptionKeywords.filter((keyword) => isKeywordPresentInResume(keyword));
-    const missingSkills = allMissingKeywords.filter((keyword) => isTechnicalKeyword(keyword));
-    const missingKeywords = allMissingKeywords.filter((keyword) => !isTechnicalKeyword(keyword));
+    const technicalJdKeywords = jobDescriptionKeywords.filter((keyword) => isTechnicalKeyword(keyword));
+    const nonTechnicalJdKeywords = jobDescriptionKeywords.filter((keyword) => !isTechnicalKeyword(keyword));
+
+    const missingTechnicalKeywords = technicalJdKeywords.filter((keyword) => !isKeywordPresentInResume(keyword));
+    const weakTechnicalKeywords = technicalJdKeywords.filter((keyword) => {
+        const normalized = normalizeKeywordTerm(keyword);
+        if (!normalized) {
+            return false;
+        }
+
+        if (!isKeywordPresentInResume(normalized)) {
+            return false;
+        }
+
+        const occurrences = Number(keywordPresenceMap.get(normalized) || 0);
+        const inSkillsSection = explicitSkillsSet.has(normalized) || normalizedUserSkillsSet.has(normalized);
+        return occurrences <= WEAK_TECHNICAL_OCCURRENCE_THRESHOLD && !inSkillsSection;
+    });
+
+    const missingVocabularyKeywords = nonTechnicalJdKeywords.filter((keyword) => !isKeywordPresentInResume(keyword));
+    const weakVocabularyKeywords = nonTechnicalJdKeywords.filter((keyword) => {
+        const normalized = normalizeKeywordTerm(keyword);
+        if (!normalized) {
+            return false;
+        }
+
+        if (!isKeywordPresentInResume(normalized)) {
+            return false;
+        }
+
+        const occurrences = Number(keywordPresenceMap.get(normalized) || 0);
+        return occurrences <= WEAK_VOCAB_OCCURRENCE_THRESHOLD;
+    });
+
+    const missingSkills = ensurePrioritizedGapList({
+        candidates: [...missingTechnicalKeywords, ...weakTechnicalKeywords],
+        preferred: [...missingTechnicalKeywords, ...technicalJdKeywords],
+        max: MAX_OUTPUT_LIST,
+    });
+    const missingKeywords = ensurePrioritizedGapList({
+        candidates: [...missingVocabularyKeywords, ...weakVocabularyKeywords],
+        preferred: [...missingVocabularyKeywords, ...nonTechnicalJdKeywords],
+        max: MAX_OUTPUT_LIST,
+    });
+    const allMissingKeywords = dedupeNormalizedKeywords([...missingSkills, ...missingKeywords], MAX_OUTPUT_LIST);
+    const missingSet = new Set(allMissingKeywords);
+    const matchedKeywords = jobDescriptionKeywords.filter((keyword) => !missingSet.has(normalizeKeywordTerm(keyword)));
 
     const coverageScore = jobDescriptionKeywords.length
         ? calculateCoverageScore({
@@ -647,7 +715,7 @@ const calculateAtsScore = async ({
     const sectionScore = clamp(skillsSectionStrength * 0.55 + sectionCompleteness * 0.45);
 
     const baseAtsScore = Math.round(clamp(coverageScore * 0.5 + densityScore * 0.2 + sectionScore * 0.3));
-    const baseRecommendations = buildRecommendations(allMissingKeywords);
+    const baseRecommendations = buildRecommendations([...missingSkills, ...missingKeywords]);
 
     let finalAtsScore = baseAtsScore;
     let finalCoverageScore = coverageScore;

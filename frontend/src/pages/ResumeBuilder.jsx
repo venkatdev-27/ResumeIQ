@@ -1,11 +1,19 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
 import Loader from '@/components/common/Loader';
 import ResumeForm from '@/components/resume/ResumeForm';
-import { enhanceResumeWithAI, saveResumeBuilder, setResumeForm, setTemplate, updateResumeSection } from '@/redux/resumeSlice';
+import ResumePreview from '@/components/resume/ResumePreview';
+import {
+    enhanceResumeWithAI,
+    generateLivePreviewSummary,
+    saveResumeBuilder,
+    setResumeForm,
+    setTemplate,
+    updateResumeSection,
+} from '@/redux/resumeSlice';
 import useAutosave from '@/hooks/useAutosave';
 import { RESUME_DRAFT_STORAGE_KEY, ROUTES, TEMPLATE_OPTIONS } from '@/utils/constants';
 import { safeJsonParse } from '@/utils/helpers';
@@ -15,7 +23,7 @@ function ResumeBuilder() {
     const navigate = useNavigate();
     const location = useLocation();
 
-    const { resumeData, template, saveStatus, saveError, uploadStatus, improveStatus, improveError } = useSelector((state) => state.resume);
+    const { resumeData, enhancedResume, form, template, saveStatus, saveError, uploadStatus, improveStatus, improveError } = useSelector((state) => state.resume);
 
     useEffect(() => {
         const draft = safeJsonParse(localStorage.getItem(RESUME_DRAFT_STORAGE_KEY), null);
@@ -61,6 +69,65 @@ function ResumeBuilder() {
         { delay: 1200, enabled: true },
     );
 
+    const liveSummarySignature = useMemo(() => {
+        const title = String(resumeData?.personalDetails?.title || '')
+            .trim()
+            .toLowerCase();
+        const work = (Array.isArray(resumeData?.workExperience) ? resumeData.workExperience : [])
+            .map((item) =>
+                [
+                    String(item?.role || '').trim().toLowerCase(),
+                    String(item?.company || '').trim().toLowerCase(),
+                    String(item?.description || '').trim().toLowerCase(),
+                ]
+                    .filter(Boolean)
+                    .join(' '),
+            )
+            .filter(Boolean)
+            .slice(0, 12);
+        const projects = (Array.isArray(resumeData?.projects) ? resumeData.projects : [])
+            .map((item) =>
+                [
+                    String(item?.name || '').trim().toLowerCase(),
+                    String(item?.description || '').trim().toLowerCase(),
+                ]
+                    .filter(Boolean)
+                    .join(' '),
+            )
+            .filter(Boolean)
+            .slice(0, 12);
+        const internships = (Array.isArray(resumeData?.internships) ? resumeData.internships : [])
+            .map((item) =>
+                [
+                    String(item?.role || '').trim().toLowerCase(),
+                    String(item?.company || '').trim().toLowerCase(),
+                    String(item?.description || '').trim().toLowerCase(),
+                ]
+                    .filter(Boolean)
+                    .join(' '),
+            )
+            .filter(Boolean)
+            .slice(0, 12);
+
+        if (!title && !work.length && !projects.length && !internships.length) {
+            return '';
+        }
+
+        return [title, ...work, ...projects, ...internships].join('|');
+    }, [resumeData?.personalDetails?.title, resumeData?.workExperience, resumeData?.projects, resumeData?.internships]);
+
+    useEffect(() => {
+        if (!liveSummarySignature) {
+            return undefined;
+        }
+
+        const timeoutId = setTimeout(() => {
+            dispatch(generateLivePreviewSummary({ sourceSignature: liveSummarySignature }));
+        }, 350);
+
+        return () => clearTimeout(timeoutId);
+    }, [dispatch, liveSummarySignature]);
+
     const handleSectionChange = (section, value) => {
         dispatch(updateResumeSection({ section, value }));
     };
@@ -95,6 +162,9 @@ function ResumeBuilder() {
                         improveStatus={improveStatus}
                         improveError={improveError}
                     />
+                </section>
+                <section className="min-w-0 overflow-x-hidden">
+                    <ResumePreview resumeData={resumeData} enhancedResume={enhancedResume} formData={form} template={template} />
                 </section>
             </main>
             {improveStatus === 'loading' ? (

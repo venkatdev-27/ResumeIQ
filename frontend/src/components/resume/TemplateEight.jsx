@@ -8,6 +8,9 @@ function TemplateEight({ resumeData, formData }) {
     const skillLines = toSkillDisplayLines(data.skills);
     const primaryContact = joinNonEmpty([data.personalDetails.location, data.personalDetails.phone, data.personalDetails.email]);
     const secondaryContact = joinNonEmpty([data.personalDetails.linkedin, data.personalDetails.website]);
+    const leftMetaHasContent = data.education.length > 0 || data.certifications.length > 0 || data.hobbies.length > 0;
+    const rightMetaHasContent = data.skills.length > 0 || data.achievements.length > 0;
+    const metaGridClass = leftMetaHasContent && rightMetaHasContent ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1 gap-2';
 
     return (
         <div id="resume-pdf" className="w-[794px] min-h-[1123px] bg-white p-8 text-sm leading-snug">
@@ -66,68 +69,78 @@ function TemplateEight({ resumeData, formData }) {
                     </section>
                 ) : null}
 
-                <section className="mb-2 grid grid-cols-2 gap-2">
-                    {data.education.length > 0 ? (
-                        <div className="space-y-1">
-                            <h2 className="border-b border-blue-300 pb-0.5 text-xs font-bold uppercase tracking-wide text-blue-700">Education</h2>
-                            {data.education.map((item) => (
-                                <p key={item.institution} className="text-sm">
-                                    <span className="font-semibold">{formatEducationDegreeYear(item)}</span>
-                                </p>
-                            ))}
-                        </div>
-                    ) : null}
+                {leftMetaHasContent || rightMetaHasContent ? (
+                    <section className={`mb-2 ${metaGridClass}`}>
+                        {leftMetaHasContent ? (
+                            <div className="space-y-2">
+                                {data.education.length > 0 ? (
+                                    <div className="space-y-1">
+                                        <h2 className="border-b border-blue-300 pb-0.5 text-xs font-bold uppercase tracking-wide text-blue-700">Education</h2>
+                                        {data.education.map((item) => (
+                                            <p key={item.institution} className="text-sm">
+                                                <span className="font-semibold">{formatEducationDegreeYear(item)}</span>
+                                            </p>
+                                        ))}
+                                    </div>
+                                ) : null}
 
-                    {data.skills.length > 0 ? (
-                        <div className="space-y-1">
-                            <h2 className="border-b border-blue-300 pb-0.5 text-xs font-bold uppercase tracking-wide text-blue-700">Skills</h2>
-                            {skillLines.map((line, lineIndex) => (
-                                <p key={`skill-line-${lineIndex}`} className="break-words text-sm">
-                                    {line.heading ? (
-                                        <>
-                                            <span className="font-semibold">{line.heading}:</span> {line.text}
-                                        </>
-                                    ) : (
-                                        line.text
-                                    )}
-                                </p>
-                            ))}
-                        </div>
-                    ) : null}
-                </section>
+                                {data.certifications.length > 0 ? (
+                                    <div className="space-y-1">
+                                        <h2 className="border-b border-blue-300 pb-0.5 text-xs font-bold uppercase tracking-wide text-blue-700">Certifications</h2>
+                                        <ul className="list-disc space-y-1 pl-4 text-sm">
+                                            {data.certifications.map((item) => (
+                                                <li key={item} className="break-words">{item}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ) : null}
 
-                <section className="grid grid-cols-3 gap-2">
-                    {data.certifications.length > 0 ? (
-                        <div className="space-y-1">
-                            <h2 className="border-b border-blue-300 pb-0.5 text-xs font-bold uppercase tracking-wide text-blue-700">Certifications</h2>
-                            <ul className="list-disc space-y-1 pl-4 text-sm">
-                                {data.certifications.map((item) => (
-                                    <li key={item} className="break-words">{item}</li>
-                                ))}
-                            </ul>
-                        </div>
-                    ) : null}
-                    {data.achievements.length > 0 ? (
-                        <div className="space-y-1">
-                            <h2 className="border-b border-blue-300 pb-0.5 text-xs font-bold uppercase tracking-wide text-blue-700">Achievements</h2>
-                            <ul className="list-disc space-y-1 pl-4 text-sm">
-                                {data.achievements.map((item) => (
-                                    <li key={item} className="break-words">{item}</li>
-                                ))}
-                            </ul>
-                        </div>
-                    ) : null}
-                    {data.hobbies.length > 0 ? (
-                        <div className="space-y-1">
-                            <h2 className="border-b border-blue-300 pb-0.5 text-xs font-bold uppercase tracking-wide text-blue-700">Hobbies</h2>
-                            <ul className="list-disc space-y-1 pl-4 text-sm">
-                                {data.hobbies.map((item) => (
-                                    <li key={item} className="break-words">{item}</li>
-                                ))}
-                            </ul>
-                        </div>
-                    ) : null}
-                </section>
+                                {data.hobbies.length > 0 ? (
+                                    <div className="space-y-1">
+                                        <h2 className="border-b border-blue-300 pb-0.5 text-xs font-bold uppercase tracking-wide text-blue-700">Hobbies</h2>
+                                        <ul className="list-disc space-y-1 pl-4 text-sm">
+                                            {data.hobbies.map((item) => (
+                                                <li key={item} className="break-words">{item}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ) : null}
+                            </div>
+                        ) : null}
+
+                        {rightMetaHasContent ? (
+                            <div className="space-y-2">
+                                {data.skills.length > 0 ? (
+                                    <div className="space-y-1">
+                                        <h2 className="border-b border-blue-300 pb-0.5 text-xs font-bold uppercase tracking-wide text-blue-700">Skills</h2>
+                                        {skillLines.map((line, lineIndex) => (
+                                            <p key={`skill-line-${lineIndex}`} className="break-words text-sm">
+                                                {line.heading ? (
+                                                    <>
+                                                        <span className="font-semibold">{line.heading}:</span> {line.text}
+                                                    </>
+                                                ) : (
+                                                    line.text
+                                                )}
+                                            </p>
+                                        ))}
+                                    </div>
+                                ) : null}
+
+                                {data.achievements.length > 0 ? (
+                                    <div className="space-y-1">
+                                        <h2 className="border-b border-blue-300 pb-0.5 text-xs font-bold uppercase tracking-wide text-blue-700">Achievements</h2>
+                                        <ul className="list-disc space-y-1 pl-4 text-sm">
+                                            {data.achievements.map((item) => (
+                                                <li key={item} className="break-words">{item}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ) : null}
+                            </div>
+                        ) : null}
+                    </section>
+                ) : null}
             </div>
         </div>
     );

@@ -28,6 +28,8 @@ const syncFormFromResumeData = (state) => {
 
 const clearEnhancedResume = (state) => {
     state.enhancedResume = null;
+    state.liveSummaryStatus = 'idle';
+    state.liveSummaryError = null;
 };
 
 const normalizeTemplateName = (templateName) => {
@@ -71,6 +73,36 @@ const normalizeSimpleText = (value) =>
         .replace(/\n/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
+
+const LIVE_PREVIEW_SUMMARY_MIN_WORDS = 45;
+const LIVE_PREVIEW_SUMMARY_MAX_WORDS = 47;
+
+const countSummaryWords = (value = '') =>
+    String(value || '')
+        .match(/[A-Za-z0-9+#./-]+/g)?.length || 0;
+
+const normalizeLivePreviewSummaryText = (value = '') => {
+    const normalized = normalizeSimpleText(value)
+        .replace(/^[\u2022*-]+\s*/g, '')
+        .trim();
+
+    if (!normalized) {
+        return '';
+    }
+
+    const words = String(normalized)
+        .split(/\s+/)
+        .filter(Boolean);
+    const withinLimit = words.slice(0, LIVE_PREVIEW_SUMMARY_MAX_WORDS).join(' ').trim();
+    const withSentenceEnding = withinLimit ? (/[\.\!\?]$/.test(withinLimit) ? withinLimit : `${withinLimit}.`) : '';
+    const wordCount = countSummaryWords(withSentenceEnding);
+
+    if (wordCount < LIVE_PREVIEW_SUMMARY_MIN_WORDS) {
+        return '';
+    }
+
+    return withSentenceEnding;
+};
 
 const normalizeSummaryToFourLines = (value = '') => {
     const lines = String(value || '')
@@ -156,6 +188,51 @@ const normalizeUniqueStrings = (values = [], max = 20) => {
             return true;
         })
         .slice(0, max);
+};
+
+const buildLivePreviewSourceSignature = (resumeData = {}) => {
+    const safeResumeData = resumeData && typeof resumeData === 'object' ? resumeData : {};
+    const title = normalizeSimpleText(safeResumeData?.personalDetails?.title || '').toLowerCase();
+    const work = (Array.isArray(safeResumeData.workExperience) ? safeResumeData.workExperience : [])
+        .map((item = {}) =>
+            [
+                normalizeSimpleText(item.role),
+                normalizeSimpleText(item.company),
+                normalizeImprovedText(item.description),
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase(),
+        )
+        .filter(Boolean)
+        .slice(0, 12);
+    const projects = (Array.isArray(safeResumeData.projects) ? safeResumeData.projects : [])
+        .map((item = {}) =>
+            [
+                normalizeSimpleText(item.name),
+                normalizeImprovedText(item.description),
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase(),
+        )
+        .filter(Boolean)
+        .slice(0, 12);
+    const internships = (Array.isArray(safeResumeData.internships) ? safeResumeData.internships : [])
+        .map((item = {}) =>
+            [
+                normalizeSimpleText(item.role),
+                normalizeSimpleText(item.company),
+                normalizeImprovedText(item.description),
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase(),
+        )
+        .filter(Boolean)
+        .slice(0, 12);
+
+    return [title, ...work, ...projects, ...internships].join('|').trim();
 };
 
 const normalizeBulletLine = (value) =>
@@ -462,6 +539,50 @@ export const enhanceResumeWithAI = createAsyncThunk('resume/enhanceResumeWithAI'
     }
 });
 
+export const generateLivePreviewSummary = createAsyncThunk(
+    'resume/generateLivePreviewSummary',
+    async ({ sourceSignature = '' } = {}, { getState, rejectWithValue }) => {
+        try {
+            const state = getState();
+            const resumeData = state.resume.resumeData;
+            const sanitizedResumeData = sanitizeResumeDataForAI(resumeData);
+            const signature = String(sourceSignature || '').trim() || buildLivePreviewSourceSignature(sanitizedResumeData);
+
+            const hasRole = Boolean(sanitizedResumeData.personalDetails?.title);
+            const hasContext =
+                hasRole ||
+                sanitizedResumeData.workExperience.length > 0 ||
+                sanitizedResumeData.projects.length > 0 ||
+                sanitizedResumeData.internships.length > 0;
+
+            if (!hasContext) {
+                return {
+                    summary: '',
+                    sourceSignature: signature,
+                };
+            }
+
+            const response = await improveResumeContentAPI({
+                mode: 'summary_preview',
+                resumeData: sanitizedResumeData,
+            });
+            const data = unwrapApiPayload(response);
+            const summary = normalizeLivePreviewSummaryText(data?.summary || '');
+
+            if (!summary) {
+                throw new Error('Unable to generate a valid live preview summary.');
+            }
+
+            return {
+                summary,
+                sourceSignature: signature,
+            };
+        } catch (error) {
+            return rejectWithValue(getErrorMessage(error, 'Unable to generate live preview summary.'));
+        }
+    },
+);
+
 const initialResumeData = createEmptyResumeData();
 
 const resumeSlice = createSlice({
@@ -481,6 +602,8 @@ const resumeSlice = createSlice({
         saveError: null,
         improveStatus: 'idle',
         improveError: null,
+        liveSummaryStatus: 'idle',
+        liveSummaryError: null,
     },
     reducers: {
         setTemplate(state, action) {
@@ -619,6 +742,8 @@ const resumeSlice = createSlice({
             state.saveError = null;
             state.improveStatus = 'idle';
             state.improveError = null;
+            state.liveSummaryStatus = 'idle';
+            state.liveSummaryError = null;
         },
     },
     extraReducers: (builder) => {
@@ -670,6 +795,34 @@ const resumeSlice = createSlice({
             .addCase(enhanceResumeWithAI.rejected, (state, action) => {
                 state.improveStatus = 'failed';
                 state.improveError = action.payload || 'Unable to enhance resume content.';
+            })
+            .addCase(generateLivePreviewSummary.pending, (state) => {
+                state.liveSummaryStatus = 'loading';
+                state.liveSummaryError = null;
+            })
+            .addCase(generateLivePreviewSummary.fulfilled, (state, action) => {
+                state.liveSummaryStatus = 'succeeded';
+                state.liveSummaryError = null;
+
+                const sourceSignature = String(action.payload?.sourceSignature || '').trim();
+                const currentSignature = buildLivePreviewSourceSignature(state.resumeData);
+
+                if (sourceSignature && currentSignature && sourceSignature !== currentSignature) {
+                    return;
+                }
+
+                const summary = normalizeLivePreviewSummaryText(action.payload?.summary || '');
+                if (!summary) {
+                    return;
+                }
+
+                const nextResume = mergeResumeData(state.resumeData);
+                nextResume.personalDetails.summary = summary;
+                state.enhancedResume = nextResume;
+            })
+            .addCase(generateLivePreviewSummary.rejected, (state, action) => {
+                state.liveSummaryStatus = 'failed';
+                state.liveSummaryError = action.payload || 'Unable to generate live preview summary.';
             });
     },
 });

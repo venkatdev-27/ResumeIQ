@@ -87,10 +87,14 @@ h6 {
     }
 
     .resume-summary-paragraph {
-        display: -webkit-box;
-        overflow: hidden;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 4;
+        display: block;
+        overflow: visible;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        -webkit-line-clamp: unset;
+        -webkit-box-orient: initial;
+        max-height: none;
     }
 }
 
