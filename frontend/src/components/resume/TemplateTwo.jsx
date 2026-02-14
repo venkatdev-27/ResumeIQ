@@ -91,6 +91,20 @@ function TemplateTwo({ resumeData, formData }) {
                             </ul>
                         </section>
                     ) : null}
+
+                    {data.hobbies.length > 0 ? (
+                        <section className="min-w-0 space-y-1">
+                            <div>
+                                <h2 className="text-xs font-bold uppercase tracking-wide">Hobbies</h2>
+                                <hr className="mt-1 border-t border-gray-300" />
+                            </div>
+                            <ul className="list-disc space-y-1 pl-4 text-sm">
+                                {data.hobbies.map((item) => (
+                                    <li key={item} className="break-words">{item}</li>
+                                ))}
+                            </ul>
+                        </section>
+                    ) : null}
                 </aside>
 
                 <main className="min-w-0 space-y-2">
@@ -140,7 +154,6 @@ function TemplateTwo({ resumeData, formData }) {
 }
 
 export default React.memo(TemplateTwo);
-
 
 
 
