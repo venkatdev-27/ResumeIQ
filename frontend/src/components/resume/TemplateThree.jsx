@@ -44,7 +44,7 @@ function TemplateThree({ resumeData, formData }) {
                                     <h2 className={sidebarHeadingClass}>Summary</h2>
                                     <hr className={sidebarRuleClass} />
                                 </div>
-                                <p className="whitespace-pre-line text-sm text-[#1e3a8a]">{data.personalDetails.summary}</p>
+                                <p className="resume-summary-paragraph text-sm text-[#1e3a8a]">{data.personalDetails.summary}</p>
                             </section>
                         ) : null}
 
@@ -141,7 +141,7 @@ function TemplateThree({ resumeData, formData }) {
                                             <p className="shrink-0 whitespace-nowrap text-right text-xs text-[#6b7280] empty:hidden">{formatDateRange(item.startDate, item.endDate)}</p>
                                         </div>
                                         <ul className="list-disc space-y-1 pl-4 text-sm marker:text-[0.72em] marker:text-[#374151]">
-                                            {toBullets(item.description).map((line, lineIndex) => (
+                                            {toBullets(item.description, [], { maxLines: item.bulletMaxLines || 3 }).map((line, lineIndex) => (
                                                 <li key={`${item.company}-${lineIndex}`} className="break-words text-[#4b5563]">{line}</li>
                                             ))}
                                         </ul>
@@ -163,7 +163,7 @@ function TemplateThree({ resumeData, formData }) {
                                         </p>
                                         <p className="break-all text-xs text-[#2563eb]">{item.link}</p>
                                         <ul className="list-disc space-y-1 pl-4 text-sm marker:text-[0.72em] marker:text-[#374151]">
-                                            {toBullets(item.description).map((line, lineIndex) => (
+                                            {toBullets(item.description, [], { maxLines: item.bulletMaxLines || 3 }).map((line, lineIndex) => (
                                                 <li key={`${item.name}-${lineIndex}`} className="break-words text-[#4b5563]">{line}</li>
                                             ))}
                                         </ul>
@@ -179,3 +179,4 @@ function TemplateThree({ resumeData, formData }) {
 }
 
 export default React.memo(TemplateThree);
+
