@@ -172,13 +172,20 @@ const normalizeInternships = (value = []) =>
         }))
         .filter((item) => hasAnyValue(item, ['company', 'role', 'startDate', 'endDate', 'description']));
 
-const mergeExperienceWithInternships = (workExperience = [], internships = []) => [
-    ...workExperience,
-    ...internships.map((item) => ({
-        ...item,
-        role: clean(item.role),
-    })),
-];
+const resolveVisibleExperience = (workExperience = [], internships = []) => {
+    if (Array.isArray(workExperience) && workExperience.length > 0) {
+        return workExperience;
+    }
+
+    if (Array.isArray(internships) && internships.length > 0) {
+        return internships.map((item) => ({
+            ...item,
+            role: clean(item.role),
+        }));
+    }
+
+    return [];
+};
 
 const normalizeEducation = (value = []) =>
     (Array.isArray(value) ? value : [])
@@ -194,12 +201,13 @@ const normalizeEducation = (value = []) =>
 export const getTemplateData = (resumeData = {}) => {
     const workExperience = normalizeWorkExperience(resumeData.workExperience || []);
     const internships = normalizeInternships(resumeData.internships || []);
+    const visibleExperience = resolveVisibleExperience(workExperience, internships);
 
     return {
         personalDetails: normalizePersonalDetails(resumeData.personalDetails || {}),
-        workExperience: mergeExperienceWithInternships(workExperience, internships),
+        workExperience: visibleExperience,
         projects: normalizeProjects(resumeData.projects || []),
-        internships,
+        internships: [],
         education: normalizeEducation(resumeData.education || []),
         skills: normalizeStringList(resumeData.skills),
         certifications: normalizeStringList(resumeData.certifications),
