@@ -13,9 +13,9 @@ const LIVE_PREVIEW_SUMMARY_MAX_WORDS = 47;
 const LIVE_PREVIEW_SUMMARY_TARGET_WORDS = 46;
 
 const TARGET_BULLET_LINES = 3;
-const TARGET_BULLET_MIN_WORDS = 7;
-const TARGET_BULLET_MAX_WORDS = 9;
-const TARGET_BULLET_WORDS = 8;
+const TARGET_BULLET_MIN_WORDS = 12;
+const TARGET_BULLET_MAX_WORDS = 14;
+const TARGET_BULLET_WORDS = 13;
 const TARGET_SHORT_LIST_ITEMS = 20;
 const IMPROVEMENT_MODES = Object.freeze({
     FULL: 'full',
@@ -87,6 +87,56 @@ const BULLET_ENDING_TOKENS = [
     'maintainability',
     'excellence',
 ];
+const BULLET_CONNECTOR_TOKENS = ['using', 'through', 'across', 'with', 'for'];
+const BULLET_PRECISION_TOKENS = [
+    'accurate',
+    'high-accuracy',
+    'validated',
+    'verifiable',
+    'measurable',
+    'traceable',
+    'auditable',
+    'deterministic',
+    'idempotent',
+    'fault-tolerant',
+    'latency-aware',
+    'throughput-optimized',
+    'standards-compliant',
+    'evidence-based',
+    'data-driven',
+    'root-cause',
+    'hypothesis-tested',
+    'risk-assessed',
+    'optimized',
+    'scalable',
+    'reliable',
+    'resilient',
+    'maintainable',
+    'compliant',
+    'secure',
+    'automated',
+    'instrumented',
+    'monitored',
+    'analyzed',
+    'implemented',
+    'integrated',
+    'deployed',
+    'tested',
+    'benchmarked',
+    'documented',
+    'production-ready',
+    'outcome-driven',
+];
+const BULLET_LOW_VALUE_TOKENS = new Set([
+    'a', 'an', 'the', 'and', 'or', 'to', 'of', 'in', 'on', 'at', 'by', 'as',
+    'is', 'are', 'was', 'were', 'be', 'been', 'being', 'this', 'that', 'these', 'those',
+    'it', 'its', 'their', 'his', 'her', 'our', 'your',
+    'dummy', 'sample', 'template', 'placeholder', 'lorem', 'ipsum', 'etc', 'misc', 'various',
+]);
+const BULLET_VAGUE_TOKENS = new Set([
+    'good', 'great', 'best', 'better', 'very', 'really', 'nice', 'awesome',
+    'excellent', 'strong', 'effective', 'efficient', 'helped', 'worked',
+]);
 const BULLET_PROFESSIONAL_VOCABULARY = [
     'analysis', 'architecture', 'automation', 'availability', 'benchmarking', 'capability', 'clarity', 'collaboration',
     'compliance', 'consistency', 'coordination', 'coverage', 'debugging', 'delivery', 'deployment', 'design',
@@ -460,6 +510,18 @@ const sanitizeToken = (token = '') =>
         .replace(/^[,.;:!?]+/, '')
         .replace(/[,.;:!?]+$/, '');
 
+const isLowValueBulletToken = (token = '') => BULLET_LOW_VALUE_TOKENS.has(toWordKey(token));
+const isVagueBulletToken = (token = '') => BULLET_VAGUE_TOKENS.has(toWordKey(token));
+
+const isStrongBulletToken = (token = '') => {
+    const safeToken = sanitizeToken(token);
+    const key = toWordKey(safeToken);
+    if (!safeToken || !key || key.length < 2) {
+        return false;
+    }
+    return !isLowValueBulletToken(safeToken) && !isVagueBulletToken(safeToken);
+};
+
 const dedupeTokensCaseInsensitive = (tokens = []) => {
     const seen = new Set();
     return (Array.isArray(tokens) ? tokens : []).filter((token) => {
@@ -625,6 +687,63 @@ const trimSentenceByOneWord = (line = '', minWords = 7) => {
     return ensureSentenceEnding(tokens.slice(0, -1).join(' '));
 };
 
+const countSummaryRoleMentions = (line = '', role = '') => {
+    const normalizedLine = compactToOneLine(line);
+    const normalizedRole = compactToOneLine(role);
+    if (!normalizedLine || !normalizedRole) {
+        return 0;
+    }
+
+    const roleRegex = new RegExp(`\\b${escapeRegExp(normalizedRole)}\\b`, 'ig');
+    return (normalizedLine.match(roleRegex) || []).length;
+};
+
+const pruneSummaryRoleMentions = (line = '', role = '', keepMentions = 0) => {
+    const normalizedLine = compactToOneLine(line);
+    const normalizedRole = compactToOneLine(role);
+    if (!normalizedLine || !normalizedRole) {
+        return ensureStrongSummaryLineEnding(normalizedLine);
+    }
+
+    let remainingMentions = Math.max(0, Number(keepMentions) || 0);
+    const roleRegex = new RegExp(`\\b${escapeRegExp(normalizedRole)}\\b`, 'ig');
+    let cleaned = normalizedLine.replace(roleRegex, (match) => {
+        if (remainingMentions > 0) {
+            remainingMentions -= 1;
+            return match;
+        }
+        return '';
+    });
+
+    cleaned = cleaned
+        .replace(/\s+([,.;:!?])/g, '$1')
+        .replace(/\s{2,}/g, ' ')
+        .replace(/\b(as|as a|as an)\s+([,.;:!?]|$)/gi, '')
+        .trim();
+
+    if (!cleaned) {
+        return 'Delivers measurable outcomes through disciplined execution and collaboration.';
+    }
+
+    return ensureStrongSummaryLineEnding(cleaned);
+};
+
+const enforceSingleRoleMentionInSummaryLines = (lines = [], role = '') => {
+    const normalizedRole = compactToOneLine(role);
+    if (!normalizedRole) {
+        return Array.isArray(lines) ? lines : [];
+    }
+
+    let remainingTotalMentions = 1;
+    return (Array.isArray(lines) ? lines : []).map((line, index) => {
+        const keepMentions = index === 0 && remainingTotalMentions > 0 ? 1 : 0;
+        const adjusted = pruneSummaryRoleMentions(line, normalizedRole, keepMentions);
+        const mentionsUsed = countSummaryRoleMentions(adjusted, normalizedRole);
+        remainingTotalMentions = Math.max(0, remainingTotalMentions - mentionsUsed);
+        return adjusted;
+    });
+};
+
 const fitSummaryLinesToWordRange = (lines = [], options = {}) => {
     const {
         minWords = TARGET_SUMMARY_MIN_WORDS,
@@ -655,6 +774,8 @@ const fitSummaryLinesToWordRange = (lines = [], options = {}) => {
             seeded[0] = ensureStrongSummaryLineEnding(`${role} ${lowerFirst(firstLine)}`);
         }
     }
+    const roleConstrainedSeeded = enforceSingleRoleMentionInSummaryLines(seeded, role);
+    seeded.splice(0, seeded.length, ...roleConstrainedSeeded);
 
     const tuningPool = dedupeTokensCaseInsensitive([
         ...buildSummaryContextTokens(resumeData),
@@ -769,15 +890,39 @@ const enforceBulletWordCount = (line = '', options = {}) => {
     const { contextLabel = '', sourceText = '', bulletIndex = 0, usedWordKeys = new Set() } = ensureObject(options);
     const baseText = compactToOneLine(line) || compactToOneLine(sourceText);
     const normalizedBaseText = stripLeadingActionVerb(baseText);
-    const baseTokens = dedupeTokensCaseInsensitive(tokenizeWords(normalizedBaseText).filter((token) => token.length > 1));
+    const baseTokens = dedupeTokensCaseInsensitive(
+        tokenizeWords(normalizedBaseText).filter((token) => token.length > 1 && isStrongBulletToken(token)),
+    );
     const contextTokens = dedupeTokensCaseInsensitive(
         tokenizeWords([contextLabel, stripLeadingActionVerb(sourceText)].filter(Boolean).join(' '))
-            .filter((token) => token.length > 2),
+            .filter((token) => token.length > 2 && isStrongBulletToken(token)),
     );
-    const tokenPools = [baseTokens, contextTokens];
+    const dynamicSourceTokens = dedupeTokensCaseInsensitive(
+        tokenizeWords([sourceText, contextLabel, line].filter(Boolean).join(' ')).filter(
+            (token) => token.length > 2 && isStrongBulletToken(token),
+        ),
+    );
+    const sourceKey = [sourceText, contextLabel].join(' ').toLowerCase();
+    const precisionTokens = BULLET_PRECISION_TOKENS.filter((token) => {
+        const key = toWordKey(token);
+        if (!key || key.length < 4) {
+            return false;
+        }
+        return sourceKey.includes(key) || dynamicSourceTokens.some((item) => toWordKey(item) === key);
+    });
+    const professionalTokens = BULLET_PROFESSIONAL_VOCABULARY.filter((token) => {
+        const key = toWordKey(token);
+        if (!key || key.length < 4) {
+            return false;
+        }
+        return sourceKey.includes(key) || sourceKey.includes(token.toLowerCase());
+    });
+    const connectorTokens = BULLET_CONNECTOR_TOKENS.filter((token) => !isLowValueBulletToken(token));
 
     const result = [];
     const lineWordKeys = new Set();
+    let contentWordCount = 0;
+    const minContentWords = Math.max(8, TARGET_BULLET_MIN_WORDS - 3);
     const requiredVerb = pickUniqueActionVerb({
         seed: contextLabel || sourceText || line || pickActionVerb(baseText),
         bulletIndex,
@@ -791,29 +936,53 @@ const enforceBulletWordCount = (line = '', options = {}) => {
         usedWordKeys,
         avoidUsedWords: false,
     });
+    contentWordCount += 1;
 
     const addPoolTokens = (pool = [], avoidUsedWords = true) => {
         for (const token of Array.isArray(pool) ? pool : []) {
             if (result.length >= TARGET_BULLET_MAX_WORDS) {
                 break;
             }
-            pushUniqueBulletToken({
+            const appended = pushUniqueBulletToken({
                 token,
                 result,
                 lineWordKeys,
                 usedWordKeys,
                 avoidUsedWords,
             });
+            if (appended && !isLowValueBulletToken(token)) {
+                contentWordCount += 1;
+            }
         }
     };
 
+    addPoolTokens(dynamicSourceTokens, true);
     addPoolTokens(baseTokens, true);
     addPoolTokens(contextTokens, true);
+    addPoolTokens(precisionTokens, true);
+    addPoolTokens(professionalTokens, true);
+    addPoolTokens(connectorTokens, false);
+    addPoolTokens(dynamicSourceTokens, false);
     addPoolTokens(baseTokens, false);
     addPoolTokens(contextTokens, false);
+    addPoolTokens(precisionTokens, false);
+    addPoolTokens(professionalTokens, false);
 
     while (result.length < TARGET_BULLET_MIN_WORDS) {
-        const fallbackToken = pickEndingToken(lineWordKeys, usedWordKeys) || 'outcomes';
+        const fallbackPool = [
+            ...dynamicSourceTokens,
+            ...baseTokens,
+            ...contextTokens,
+            ...precisionTokens,
+            ...professionalTokens,
+            ...BULLET_ENDING_TOKENS,
+            ...BULLET_CONNECTOR_TOKENS,
+        ];
+        const fallbackToken =
+            fallbackPool.find((token) => {
+                const key = toWordKey(token);
+                return key && !lineWordKeys.has(key) && !usedWordKeys.has(key) && isStrongBulletToken(token);
+            }) || pickEndingToken(lineWordKeys, usedWordKeys);
         const appended = pushUniqueBulletToken({
             token: fallbackToken,
             result,
@@ -822,14 +991,30 @@ const enforceBulletWordCount = (line = '', options = {}) => {
             avoidUsedWords: false,
         });
         if (!appended) {
-            const emergencyToken = result.length % 2 === 0 ? 'delivery' : 'impact';
-            pushUniqueBulletToken({
+            const emergencyToken =
+                BULLET_ENDING_TOKENS.find((token) => {
+                    const key = toWordKey(token);
+                    return key && !lineWordKeys.has(key) && !usedWordKeys.has(key);
+                }) || 'outcomes';
+            const emergencyAppended = pushUniqueBulletToken({
                 token: emergencyToken,
                 result,
                 lineWordKeys,
                 usedWordKeys,
                 avoidUsedWords: false,
             });
+            if (!emergencyAppended) {
+                pushUniqueBulletToken({
+                    token: 'outcomes',
+                    result,
+                    lineWordKeys,
+                    usedWordKeys,
+                    avoidUsedWords: false,
+                });
+            }
+        }
+        if (appended && !isLowValueBulletToken(fallbackToken)) {
+            contentWordCount += 1;
         }
     }
 
@@ -838,10 +1023,24 @@ const enforceBulletWordCount = (line = '', options = {}) => {
         finalTokens = finalTokens.slice(0, TARGET_BULLET_MAX_WORDS);
     }
 
-    const finalWordKeys = new Set(finalTokens.map((token) => toWordKey(token)).filter(Boolean));
-    const endingToken = pickEndingToken(finalWordKeys, usedWordKeys);
-    if (endingToken) {
-        finalTokens[finalTokens.length - 1] = endingToken;
+    if (contentWordCount < minContentWords) {
+        for (let index = finalTokens.length - 1; index >= 0; index -= 1) {
+            if (!isLowValueBulletToken(finalTokens[index])) {
+                continue;
+            }
+            const replacement = [...dynamicSourceTokens, ...precisionTokens, ...professionalTokens, ...BULLET_ENDING_TOKENS].find((token) => {
+                const key = toWordKey(token);
+                return key && !lineWordKeys.has(key) && isStrongBulletToken(token);
+            });
+            if (!replacement) {
+                break;
+            }
+            finalTokens[index] = replacement;
+            contentWordCount += 1;
+            if (contentWordCount >= minContentWords) {
+                break;
+            }
+        }
     }
 
     finalTokens.forEach((token) => {
@@ -1185,12 +1384,14 @@ const fillToFixedLineCount = (lines = [], target = TARGET_SUMMARY_LINES, fallbac
 
 const normalizeSummary = (value = '', resumeData = {}) => {
     const cleaned = normalizeLineBreaks(value).replace(/^[\u2022*-]+\s*/gm, '');
+    const role = deriveProfessionalTitle(resumeData);
 
     if (isSummaryFormatCompliant(cleaned)) {
-        return normalizeToLines(cleaned)
+        const lines = normalizeToLines(cleaned)
             .slice(0, TARGET_SUMMARY_MAX_LINES)
-            .map((line) => ensureSentenceEnding(line))
-            .join('\n');
+            .map((line) => ensureSentenceEnding(line));
+        const roleConstrainedLines = enforceSingleRoleMentionInSummaryLines(lines, role);
+        return roleConstrainedLines.join('\n');
     }
 
     if (!cleaned) {
@@ -1321,12 +1522,16 @@ const buildUniqueBulletLines = ({ lines = [], contextLabel = '', sourceText = ''
 
 const buildContextFallbackBullets = (contextLabel = '') => {
     const context = compactToOneLine(contextLabel || '');
-    const scopedContext = context ? ` in ${context}` : '';
+    const contextTokens = dedupeTokensCaseInsensitive(
+        tokenizeWords(context).filter((token) => token.length > 2 && isStrongBulletToken(token)),
+    );
+    const contextText = contextTokens.slice(0, 6).join(' ');
+    const scopedContext = contextText ? ` using ${contextText}` : '';
 
     return [
-        `Delivered role responsibilities${scopedContext}.`,
-        `Implemented execution workflows${scopedContext}.`,
-        `Enhanced consistency and quality${scopedContext}.`,
+        `Delivered measurable implementation outcomes${scopedContext} with accountable execution and quality controls.`,
+        `Implemented reliable workflows${scopedContext} to improve consistency, coordination, and delivery impact.`,
+        `Enhanced role-aligned deliverables${scopedContext} through structured planning, validation, and continuous improvement.`,
     ];
 };
 
@@ -1375,8 +1580,13 @@ const normalizeBulletList = ({
     });
 };
 
-const buildSectionContextLabel = ({ profession = '', sectionLabel = '', primaryLabel = '', secondaryLabel = '' }) =>
-    [profession, sectionLabel, primaryLabel, secondaryLabel]
+const buildSkillsContextText = (skills = [], max = 5) =>
+    normalizeSkills(skills)
+        .slice(0, max)
+        .join(' ');
+
+const buildSectionContextLabel = ({ profession = '', sectionLabel = '', primaryLabel = '', secondaryLabel = '', tertiaryLabel = '' }) =>
+    [profession, sectionLabel, primaryLabel, secondaryLabel, tertiaryLabel]
         .map((item) => compactToOneLine(item))
         .filter(Boolean)
         .join(' ')
@@ -1390,10 +1600,17 @@ const deriveProfessionFromSourceItems = (sourceItems = []) => {
     return firstRole || 'Technology Professional';
 };
 
-const normalizeWorkExperienceSection = ({ payloadItems, sourceItems, profession = '', allowSyntheticFallback = true }) => {
+const normalizeWorkExperienceSection = ({
+    payloadItems,
+    sourceItems,
+    profession = '',
+    skillsContext = '',
+    allowSyntheticFallback = true,
+}) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
     const safeSourceItems = Array.isArray(sourceItems) ? sourceItems : [];
     const effectiveProfession = compactToOneLine(profession) || deriveProfessionFromSourceItems(safeSourceItems);
+    const effectiveSkillsContext = compactToOneLine(skillsContext || '');
 
     return safeSourceItems
         .slice(0, 30)
@@ -1413,6 +1630,7 @@ const normalizeWorkExperienceSection = ({ payloadItems, sourceItems, profession 
                         sectionLabel: 'work experience',
                         primaryLabel: safePayload.role || sourceItem.role || '',
                         secondaryLabel: safePayload.company || sourceItem.company || '',
+                        tertiaryLabel: effectiveSkillsContext,
                     }),
                 }),
             };
@@ -1420,10 +1638,17 @@ const normalizeWorkExperienceSection = ({ payloadItems, sourceItems, profession 
         .filter((item) => hasAnyText(item.company, item.role, ...item.bullets));
 };
 
-const normalizeProjectsSection = ({ payloadItems, sourceItems, profession = '', allowSyntheticFallback = true }) => {
+const normalizeProjectsSection = ({
+    payloadItems,
+    sourceItems,
+    profession = '',
+    skillsContext = '',
+    allowSyntheticFallback = true,
+}) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
     const safeSourceItems = Array.isArray(sourceItems) ? sourceItems : [];
     const effectiveProfession = compactToOneLine(profession) || 'Technology Professional';
+    const effectiveSkillsContext = compactToOneLine(skillsContext || '');
 
     return safeSourceItems
         .slice(0, 30)
@@ -1443,6 +1668,7 @@ const normalizeProjectsSection = ({ payloadItems, sourceItems, profession = '', 
                         sectionLabel: 'project',
                         primaryLabel: title || sourceItem.name || 'delivery',
                         secondaryLabel: sourceItem.techStack || '',
+                        tertiaryLabel: effectiveSkillsContext,
                     }),
                 }),
             };
@@ -1450,10 +1676,17 @@ const normalizeProjectsSection = ({ payloadItems, sourceItems, profession = '', 
         .filter((item) => hasAnyText(item.title, ...item.bullets));
 };
 
-const normalizeInternshipsSection = ({ payloadItems, sourceItems, profession = '', allowSyntheticFallback = true }) => {
+const normalizeInternshipsSection = ({
+    payloadItems,
+    sourceItems,
+    profession = '',
+    skillsContext = '',
+    allowSyntheticFallback = true,
+}) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
     const safeSourceItems = Array.isArray(sourceItems) ? sourceItems : [];
     const effectiveProfession = compactToOneLine(profession) || deriveProfessionFromSourceItems(safeSourceItems);
+    const effectiveSkillsContext = compactToOneLine(skillsContext || '');
 
     return safeSourceItems
         .slice(0, 30)
@@ -1473,6 +1706,7 @@ const normalizeInternshipsSection = ({ payloadItems, sourceItems, profession = '
                         sectionLabel: 'internship',
                         primaryLabel: safePayload.role || sourceItem.role || '',
                         secondaryLabel: safePayload.company || sourceItem.company || '',
+                        tertiaryLabel: effectiveSkillsContext,
                     }),
                 }),
             };
@@ -1746,6 +1980,7 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
         deriveProfessionalTitle(resumeData) ||
         compactToOneLine(resumeData?.personalDetails?.title || '') ||
         'Technology Professional';
+    const skillsContext = buildSkillsContextText(resumeData?.skills);
 
     return {
         summary: atsOnly
@@ -1755,18 +1990,21 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
             payloadItems: safePayload.workExperience,
             sourceItems: resumeData.workExperience,
             profession,
+            skillsContext,
             allowSyntheticFallback: false,
         }),
         projects: normalizeProjectsSection({
             payloadItems: safePayload.projects,
             sourceItems: resumeData.projects,
             profession,
+            skillsContext,
             allowSyntheticFallback: false,
         }),
         internships: normalizeInternshipsSection({
             payloadItems: safePayload.internships,
             sourceItems: resumeData.internships,
             profession,
+            skillsContext,
             allowSyntheticFallback: false,
         }),
         skills: optimizedSkills,
@@ -1951,20 +2189,21 @@ SUMMARY RULES (STRICT):
 1. Use 4 or 5 lines.
 2. Total summary length must be 45 to 47 words.
 3. First line must start with candidate job title exactly.
-4. Use only job title and real experience, project, or internship context from resumeData.
-5. Explicitly show what the candidate delivers or builds.
-6. Do NOT use dummy text, filler, or template phrases.
-7. Use strong professional vocabulary and meaningful action verbs.
-8. Keep each line concise for A4 resume width.
-9. End with a complete, grammatically strong professional sentence.
-10. Do NOT mention tools/skills unless they already appear in source context text.
-11. Context priority rule:
+4. Mention the profession/job title exactly one time in the full summary.
+5. Use only job title and real experience, project, or internship context from resumeData.
+6. Explicitly show what the candidate delivers or builds.
+7. Do NOT use dummy text, filler, or template phrases.
+8. Use strong professional vocabulary and meaningful action verbs.
+9. Keep each line concise for A4 resume width.
+10. End with a complete, grammatically strong professional sentence.
+11. Do NOT mention tools/skills unless they already appear in source context text.
+12. Context priority rule:
    - If workExperience has data, use work experience context and do not mention internship.
    - If workExperience is empty and internships has data, use internship context and do not mention work experience.
    - If both are empty, do not force either context.
-12. Prioritize experience/internship/project evidence over personal profile statements.
-13. Personal details are secondary; focus on professional delivery and built outcomes.
-14. Prefer ATS-optimized wording that supports 90+ ATS potential when data allows.
+13. Prioritize experience/internship/project evidence over personal profile statements.
+14. Personal details are secondary; focus on professional delivery and built outcomes.
+15. Prefer ATS-optimized wording that supports 90+ ATS potential when data allows.
 
 OUTPUT RULES:
 1. Return valid JSON only.
@@ -2025,24 +2264,28 @@ SUMMARY RULES (STRICT):
 1. Use 4 or 5 lines.
 2. Total summary length must be 45 to 47 words.
 3. First line must start with candidate job title exactly.
-4. Use only job title and real experience, project, or internship context from resumeData.
-5. Explicitly show what the candidate delivers or builds.
-6. Do NOT use dummy text, filler, or template phrases.
-7. Use strong professional vocabulary and meaningful action verbs.
-8. Keep each line concise for A4 resume width.
-9. End with a complete, grammatically strong professional sentence.
-10. Use only facts from provided resumeData fields.
-11. Do not reuse canned templates, sample sentences, or fixed phrases.
-12. Prioritize experience/internship/project evidence over personal profile statements.
-13. Personal details are secondary; focus on what candidate delivers or builds.
+4. Mention the profession/job title exactly one time in the full summary.
+5. Use only job title and real experience, project, or internship context from resumeData.
+6. Explicitly show what the candidate delivers or builds.
+7. Do NOT use dummy text, filler, or template phrases.
+8. Use strong professional vocabulary and meaningful action verbs.
+9. Keep each line concise for A4 resume width.
+10. End with a complete, grammatically strong professional sentence.
+11. Use only facts from provided resumeData fields.
+12. Do not reuse canned templates, sample sentences, or fixed phrases.
+13. Prioritize experience/internship/project evidence over personal profile statements.
+14. Personal details are secondary; focus on what candidate delivers or builds.
 
 BULLET RULES (STRICT):
 1. For each work experience, project, and internship item return exactly 3 bullets.
-2. Each bullet must contain 7 to 9 words.
+2. Each bullet must contain 12 to 14 words.
 3. Each bullet must start with a strong action verb.
 4. Keep each bullet line unique and avoid repeated wording across bullets of the same item.
-5. Keep each bullet concise and suitable for A4 resume width.
-6. Include technology, task, and result naturally without fabrication.
+5. Keep each bullet as one concise line suitable for A4 resume width.
+6. Include technology, task, and impact/result naturally without fabrication.
+7. Use only user-provided skills, experience, internships, and projects as context.
+8. Never use dummy placeholders, generic filler, or template-like repeated lines.
+9. Use highly accurate, precise, domain-specific, verifiable vocabulary words; avoid vague adjectives like good/great/best.
 
 SKILLS RULES:
 1. Keep only relevant technical skills missing or weak in the current resume.
@@ -2076,19 +2319,19 @@ Return JSON in this exact schema:
     {
       "company": "string",
       "role": "string",
-      "bullets": ["7 to 9 words"]
+      "bullets": ["12 to 14 words"]
     }
   ],
   "projects": [
     {
       "title": "string",
-      "bullets": ["7 to 9 words"]
+      "bullets": ["12 to 14 words"]
     }
   ],
   "internships": [
     {
       "company": "string",
-      "bullets": ["7 to 9 words"]
+      "bullets": ["12 to 14 words"]
     }
   ],
   "skills": ["string"],
@@ -2222,6 +2465,7 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
     const missingKeywords = filterTermsNotInResume([safeContext.missingKeywords], resumeSearchText, 25);
     const missingSkills = filterTermsNotInResume([safeContext.missingSkills], resumeSearchText, 20);
     const profession = deriveProfessionalTitle(resumeData);
+    const skillsContext = buildSkillsContextText(resumeData?.skills);
 
     const whyScoreIsLower = [];
     if (missingKeywords.length) {
@@ -2264,6 +2508,7 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
                     sectionLabel: 'work experience',
                     primaryLabel: item?.role || '',
                     secondaryLabel: item?.company || '',
+                    tertiaryLabel: skillsContext,
                 }),
             }),
         })),
@@ -2278,6 +2523,7 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
                     sectionLabel: 'project',
                     primaryLabel: item?.name || item?.title || 'delivery',
                     secondaryLabel: item?.techStack || '',
+                    tertiaryLabel: skillsContext,
                 }),
             }),
         })),
@@ -2293,6 +2539,7 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
                     sectionLabel: 'internship',
                     primaryLabel: item?.role || '',
                     secondaryLabel: item?.company || '',
+                    tertiaryLabel: skillsContext,
                 }),
             }),
         })),
