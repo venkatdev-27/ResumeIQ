@@ -754,6 +754,7 @@ const fitSummaryLinesToWordRange = (lines = [], options = {}) => {
 
     const safeLines = dedupeLines(
         (Array.isArray(lines) ? lines : [])
+            .map((line) => ensureStrongSummaryLineStart(line))
             .map((line) => ensureStrongSummaryLineEnding(line))
             .filter(Boolean),
     );
@@ -764,7 +765,9 @@ const fitSummaryLinesToWordRange = (lines = [], options = {}) => {
 
     const seeded = fillToFixedLineCount(safeLines, targetLineCount, fallbackLines, {
         allowVerbRewrites: false,
-    }).map((line) => ensureStrongSummaryLineEnding(line));
+    })
+        .map((line) => ensureStrongSummaryLineStart(line))
+        .map((line) => ensureStrongSummaryLineEnding(line));
 
     const role = deriveProfessionalTitle(resumeData);
     if (role && seeded.length) {
@@ -773,6 +776,9 @@ const fitSummaryLinesToWordRange = (lines = [], options = {}) => {
         if (!roleMatcher.test(firstLine)) {
             seeded[0] = ensureStrongSummaryLineEnding(`${role} ${lowerFirst(firstLine)}`);
         }
+        seeded[0] = ensureStrongSummaryLineEnding(
+            ensureStrongSummaryLineStart(seeded[0], { role, enforceRolePrefix: true }),
+        );
     }
     const roleConstrainedSeeded = enforceSingleRoleMentionInSummaryLines(seeded, role);
     seeded.splice(0, seeded.length, ...roleConstrainedSeeded);
@@ -830,7 +836,16 @@ const fitSummaryLinesToWordRange = (lines = [], options = {}) => {
         totalWords = summaryWordCount(seeded.join(' '));
     }
 
-    return seeded.slice(0, targetLineCount).map((line) => ensureStrongSummaryLineEnding(line));
+    return seeded
+        .slice(0, targetLineCount)
+        .map((line, index) =>
+            ensureStrongSummaryLineEnding(
+                ensureStrongSummaryLineStart(line, {
+                    role,
+                    enforceRolePrefix: index === 0 && Boolean(role),
+                }),
+            ),
+        );
 };
 
 const buildContextDrivenSummary = (resumeData = {}) => {
@@ -875,6 +890,7 @@ const buildContextDrivenSummary = (resumeData = {}) => {
 const enforceSummaryFormat = (lines = [], resumeData = {}) => {
     const normalizedLines = dedupeLines(
         (Array.isArray(lines) ? lines : [])
+            .map((line) => ensureStrongSummaryLineStart(line))
             .map((line) => ensureStrongSummaryLineEnding(line))
             .filter(Boolean),
     );
@@ -1149,6 +1165,62 @@ const SUMMARY_WEAK_ENDING_WORDS = new Set([
     'by',
     'as',
 ]);
+const SUMMARY_WEAK_STARTING_WORDS = new Set([
+    'and',
+    'or',
+    'with',
+    'while',
+    'through',
+    'across',
+    'into',
+    'for',
+    'to',
+    'from',
+    'of',
+    'in',
+    'on',
+    'at',
+    'by',
+    'as',
+]);
+const SUMMARY_STRONG_ENDING_WORDS = ['impact', 'outcomes', 'excellence', 'reliability', 'quality', 'value'];
+
+const toSeed = (value = '') =>
+    [...String(value || '')].reduce((sum, char, index) => sum + char.charCodeAt(0) * (index + 1), 0);
+
+const pickSummaryStrongEnding = (line = '') => {
+    const seed = toSeed(line);
+    return SUMMARY_STRONG_ENDING_WORDS[seed % SUMMARY_STRONG_ENDING_WORDS.length];
+};
+
+const ensureStrongSummaryLineStart = (value = '', options = {}) => {
+    const { role = '', enforceRolePrefix = false } = ensureObject(options);
+    const normalized = compactToOneLine(value).replace(/^[\u2022*-]+\s*/g, '').trim();
+    if (!normalized) {
+        return '';
+    }
+
+    const safeRole = compactToOneLine(role);
+    if (enforceRolePrefix && safeRole) {
+        const roleMatcher = new RegExp(`^${escapeRegExp(safeRole)}\\b`, 'i');
+        if (roleMatcher.test(normalized)) {
+            return normalized;
+        }
+        return `${safeRole} ${lowerFirst(normalized)}`.trim();
+    }
+
+    const tokens = normalized.split(/\s+/).filter(Boolean);
+    if (!tokens.length) {
+        return normalized;
+    }
+
+    const firstWord = String(tokens[0] || '').toLowerCase();
+    if (SUMMARY_WEAK_STARTING_WORDS.has(firstWord)) {
+        tokens.unshift('Delivers');
+    }
+
+    return tokens.join(' ').trim();
+};
 
 const ensureStrongSummaryLineEnding = (value = '') => {
     const normalized = compactToOneLine(value).replace(/[.!?]+$/, '').trim();
@@ -1164,7 +1236,7 @@ const ensureStrongSummaryLineEnding = (value = '') => {
     const lastIndex = tokens.length - 1;
     const lastWord = String(tokens[lastIndex] || '').toLowerCase();
     if (SUMMARY_WEAK_ENDING_WORDS.has(lastWord)) {
-        tokens[lastIndex] = 'effectively';
+        tokens[lastIndex] = pickSummaryStrongEnding(normalized);
     }
 
     return ensureSentenceEnding(tokens.join(' '));
@@ -1389,7 +1461,14 @@ const normalizeSummary = (value = '', resumeData = {}) => {
     if (isSummaryFormatCompliant(cleaned)) {
         const lines = normalizeToLines(cleaned)
             .slice(0, TARGET_SUMMARY_MAX_LINES)
-            .map((line) => ensureSentenceEnding(line));
+            .map((line, index) =>
+                ensureStrongSummaryLineEnding(
+                    ensureStrongSummaryLineStart(line, {
+                        role,
+                        enforceRolePrefix: index === 0 && Boolean(role),
+                    }),
+                ),
+            );
         const roleConstrainedLines = enforceSingleRoleMentionInSummaryLines(lines, role);
         return roleConstrainedLines.join('\n');
     }
@@ -1520,6 +1599,66 @@ const buildUniqueBulletLines = ({ lines = [], contextLabel = '', sourceText = ''
     return results.slice(0, TARGET_BULLET_LINES);
 };
 
+const enforceGlobalBulletUniqueness = ({
+    bullets = [],
+    contextLabel = '',
+    sourceText = '',
+    sharedLineKeys = new Set(),
+    sharedWordKeys = new Set(),
+}) => {
+    const result = [];
+    const localKeys = new Set();
+    const safeBullets = Array.isArray(bullets) ? bullets : [];
+
+    const tryCreateUniqueBullet = ({ baseLine = '', attempt = 0 }) =>
+        enforceBulletWordCount(baseLine, {
+            contextLabel: `${contextLabel} variation ${attempt + 1}`,
+            sourceText: [sourceText, baseLine, contextLabel].filter(Boolean).join(' '),
+            bulletIndex: attempt,
+            usedWordKeys: sharedWordKeys,
+        });
+
+    const pushIfUnique = (candidate = '', attemptSeed = 0) => {
+        let line = String(candidate || '').trim();
+        let key = normalizeBulletLineKey(line);
+        let attempts = 0;
+
+        while (
+            (!key || sharedLineKeys.has(key) || localKeys.has(key)) &&
+            attempts < 8
+        ) {
+            line = tryCreateUniqueBullet({ baseLine: line || candidate || contextLabel, attempt: attemptSeed + attempts + 1 });
+            key = normalizeBulletLineKey(line);
+            attempts += 1;
+        }
+
+        if (!key || sharedLineKeys.has(key) || localKeys.has(key)) {
+            return false;
+        }
+
+        localKeys.add(key);
+        sharedLineKeys.add(key);
+        result.push(line);
+        return true;
+    };
+
+    safeBullets.forEach((line, index) => {
+        pushIfUnique(line, index);
+    });
+
+    let fillAttempt = 0;
+    while (result.length < TARGET_BULLET_LINES && fillAttempt < 12) {
+        const generated = tryCreateUniqueBullet({
+            baseLine: `${contextLabel} ${sourceText}`,
+            attempt: fillAttempt + safeBullets.length,
+        });
+        pushIfUnique(generated, fillAttempt + safeBullets.length);
+        fillAttempt += 1;
+    }
+
+    return result.slice(0, TARGET_BULLET_LINES);
+};
+
 const buildContextFallbackBullets = (contextLabel = '') => {
     const context = compactToOneLine(contextLabel || '');
     const contextTokens = dedupeTokensCaseInsensitive(
@@ -1605,6 +1744,8 @@ const normalizeWorkExperienceSection = ({
     sourceItems,
     profession = '',
     skillsContext = '',
+    sharedLineKeys = new Set(),
+    sharedWordKeys = new Set(),
     allowSyntheticFallback = true,
 }) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
@@ -1620,7 +1761,8 @@ const normalizeWorkExperienceSection = ({
             return {
                 company: String(safePayload.company || sourceItem.company || '').trim(),
                 role: String(safePayload.role || sourceItem.role || '').trim(),
-                bullets: normalizeBulletList({
+                bullets: enforceGlobalBulletUniqueness({
+                    bullets: normalizeBulletList({
                     bullets: safePayload.bullets,
                     text: safePayload.improvedDescription || safePayload.description || '',
                     fallbackText: sourceItem.description || '',
@@ -1633,6 +1775,17 @@ const normalizeWorkExperienceSection = ({
                         tertiaryLabel: effectiveSkillsContext,
                     }),
                 }),
+                    contextLabel: buildSectionContextLabel({
+                        profession: effectiveProfession,
+                        sectionLabel: 'work experience',
+                        primaryLabel: safePayload.role || sourceItem.role || '',
+                        secondaryLabel: safePayload.company || sourceItem.company || '',
+                        tertiaryLabel: effectiveSkillsContext,
+                    }),
+                    sourceText: [safePayload.improvedDescription || safePayload.description || '', sourceItem.description || ''].join(' '),
+                    sharedLineKeys,
+                    sharedWordKeys,
+                }),
             };
         })
         .filter((item) => hasAnyText(item.company, item.role, ...item.bullets));
@@ -1643,6 +1796,8 @@ const normalizeProjectsSection = ({
     sourceItems,
     profession = '',
     skillsContext = '',
+    sharedLineKeys = new Set(),
+    sharedWordKeys = new Set(),
     allowSyntheticFallback = true,
 }) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
@@ -1658,7 +1813,8 @@ const normalizeProjectsSection = ({
 
             return {
                 title,
-                bullets: normalizeBulletList({
+                bullets: enforceGlobalBulletUniqueness({
+                    bullets: normalizeBulletList({
                     bullets: safePayload.bullets,
                     text: safePayload.improvedDescription || safePayload.description || '',
                     fallbackText: sourceItem.description || '',
@@ -1671,6 +1827,17 @@ const normalizeProjectsSection = ({
                         tertiaryLabel: effectiveSkillsContext,
                     }),
                 }),
+                    contextLabel: buildSectionContextLabel({
+                        profession: effectiveProfession,
+                        sectionLabel: 'project',
+                        primaryLabel: title || sourceItem.name || 'delivery',
+                        secondaryLabel: sourceItem.techStack || '',
+                        tertiaryLabel: effectiveSkillsContext,
+                    }),
+                    sourceText: [safePayload.improvedDescription || safePayload.description || '', sourceItem.description || ''].join(' '),
+                    sharedLineKeys,
+                    sharedWordKeys,
+                }),
             };
         })
         .filter((item) => hasAnyText(item.title, ...item.bullets));
@@ -1681,6 +1848,8 @@ const normalizeInternshipsSection = ({
     sourceItems,
     profession = '',
     skillsContext = '',
+    sharedLineKeys = new Set(),
+    sharedWordKeys = new Set(),
     allowSyntheticFallback = true,
 }) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
@@ -1696,7 +1865,8 @@ const normalizeInternshipsSection = ({
             return {
                 company: String(safePayload.company || sourceItem.company || '').trim(),
                 role: String(safePayload.role || sourceItem.role || '').trim(),
-                bullets: normalizeBulletList({
+                bullets: enforceGlobalBulletUniqueness({
+                    bullets: normalizeBulletList({
                     bullets: safePayload.bullets,
                     text: safePayload.improvedDescription || safePayload.description || '',
                     fallbackText: sourceItem.description || '',
@@ -1708,6 +1878,17 @@ const normalizeInternshipsSection = ({
                         secondaryLabel: safePayload.company || sourceItem.company || '',
                         tertiaryLabel: effectiveSkillsContext,
                     }),
+                }),
+                    contextLabel: buildSectionContextLabel({
+                        profession: effectiveProfession,
+                        sectionLabel: 'internship',
+                        primaryLabel: safePayload.role || sourceItem.role || '',
+                        secondaryLabel: safePayload.company || sourceItem.company || '',
+                        tertiaryLabel: effectiveSkillsContext,
+                    }),
+                    sourceText: [safePayload.improvedDescription || safePayload.description || '', sourceItem.description || ''].join(' '),
+                    sharedLineKeys,
+                    sharedWordKeys,
                 }),
             };
         })
@@ -1981,6 +2162,8 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
         compactToOneLine(resumeData?.personalDetails?.title || '') ||
         'Technology Professional';
     const skillsContext = buildSkillsContextText(resumeData?.skills);
+    const sharedLineKeys = new Set();
+    const sharedWordKeys = new Set();
 
     return {
         summary: atsOnly
@@ -1991,6 +2174,8 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
             sourceItems: resumeData.workExperience,
             profession,
             skillsContext,
+            sharedLineKeys,
+            sharedWordKeys,
             allowSyntheticFallback: false,
         }),
         projects: normalizeProjectsSection({
@@ -1998,6 +2183,8 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
             sourceItems: resumeData.projects,
             profession,
             skillsContext,
+            sharedLineKeys,
+            sharedWordKeys,
             allowSyntheticFallback: false,
         }),
         internships: normalizeInternshipsSection({
@@ -2005,6 +2192,8 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
             sourceItems: resumeData.internships,
             profession,
             skillsContext,
+            sharedLineKeys,
+            sharedWordKeys,
             allowSyntheticFallback: false,
         }),
         skills: optimizedSkills,
@@ -2166,6 +2355,8 @@ const buildSummaryPreviewResponse = (summary = '', resumeData = {}) => {
         compactToOneLine(resumeData?.personalDetails?.title || '') ||
         'Technology Professional';
     const skillsContext = buildSkillsContextText(resumeData?.skills);
+    const sharedLineKeys = new Set();
+    const sharedWordKeys = new Set();
 
     return {
         summary,
@@ -2174,6 +2365,8 @@ const buildSummaryPreviewResponse = (summary = '', resumeData = {}) => {
             sourceItems: resumeData?.workExperience,
             profession,
             skillsContext,
+            sharedLineKeys,
+            sharedWordKeys,
             allowSyntheticFallback: true,
         }),
         projects: normalizeProjectsSection({
@@ -2181,6 +2374,8 @@ const buildSummaryPreviewResponse = (summary = '', resumeData = {}) => {
             sourceItems: resumeData?.projects,
             profession,
             skillsContext,
+            sharedLineKeys,
+            sharedWordKeys,
             allowSyntheticFallback: true,
         }),
         internships: normalizeInternshipsSection({
@@ -2188,6 +2383,8 @@ const buildSummaryPreviewResponse = (summary = '', resumeData = {}) => {
             sourceItems: resumeData?.internships,
             profession,
             skillsContext,
+            sharedLineKeys,
+            sharedWordKeys,
             allowSyntheticFallback: true,
         }),
         skills: [],
@@ -2230,6 +2427,7 @@ SUMMARY RULES (STRICT):
 13. Prioritize experience/internship/project evidence over personal profile statements.
 14. Personal details are secondary; focus on professional delivery and built outcomes.
 15. Prefer ATS-optimized wording that supports 90+ ATS potential when data allows.
+16. Start and end each summary line with strong professional vocabulary; end every line with a full stop.
 
 OUTPUT RULES:
 1. Return valid JSON only.
@@ -2301,12 +2499,13 @@ SUMMARY RULES (STRICT):
 12. Do not reuse canned templates, sample sentences, or fixed phrases.
 13. Prioritize experience/internship/project evidence over personal profile statements.
 14. Personal details are secondary; focus on what candidate delivers or builds.
+15. Start and end each summary line with strong professional vocabulary; end every line with a full stop.
 
 BULLET RULES (STRICT):
 1. For each work experience, project, and internship item return exactly 3 bullets.
 2. Each bullet must contain 12 to 14 words.
 3. Each bullet must start with a strong action verb.
-4. Keep each bullet line unique and avoid repeated wording across bullets of the same item.
+4. Keep each bullet line globally unique and avoid repeated wording across all items and sections.
 5. Keep each bullet as one concise line suitable for A4 resume width.
 6. Include technology, task, and impact/result naturally without fabrication.
 7. Use only user-provided skills, experience, internships, and projects as context.
@@ -2492,6 +2691,8 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
     const missingSkills = filterTermsNotInResume([safeContext.missingSkills], resumeSearchText, 20);
     const profession = deriveProfessionalTitle(resumeData);
     const skillsContext = buildSkillsContextText(resumeData?.skills);
+    const sharedLineKeys = new Set();
+    const sharedWordKeys = new Set();
 
     const whyScoreIsLower = [];
     if (missingKeywords.length) {
@@ -2525,10 +2726,19 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
         workExperience: (Array.isArray(resumeData.workExperience) ? resumeData.workExperience : []).map((item) => ({
             company: String(item?.company || '').trim(),
             role: String(item?.role || '').trim(),
-            bullets: normalizeBulletList({
-                text: item?.description || '',
-                fallbackText: item?.description || '',
-                allowSyntheticFallback: false,
+            bullets: enforceGlobalBulletUniqueness({
+                bullets: normalizeBulletList({
+                    text: item?.description || '',
+                    fallbackText: item?.description || '',
+                    allowSyntheticFallback: false,
+                    contextLabel: buildSectionContextLabel({
+                        profession,
+                        sectionLabel: 'work experience',
+                        primaryLabel: item?.role || '',
+                        secondaryLabel: item?.company || '',
+                        tertiaryLabel: skillsContext,
+                    }),
+                }),
                 contextLabel: buildSectionContextLabel({
                     profession,
                     sectionLabel: 'work experience',
@@ -2536,14 +2746,26 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
                     secondaryLabel: item?.company || '',
                     tertiaryLabel: skillsContext,
                 }),
+                sourceText: item?.description || '',
+                sharedLineKeys,
+                sharedWordKeys,
             }),
         })),
         projects: (Array.isArray(resumeData.projects) ? resumeData.projects : []).map((item) => ({
             title: String(item?.name || item?.title || '').trim(),
-            bullets: normalizeBulletList({
-                text: item?.description || '',
-                fallbackText: item?.description || '',
-                allowSyntheticFallback: false,
+            bullets: enforceGlobalBulletUniqueness({
+                bullets: normalizeBulletList({
+                    text: item?.description || '',
+                    fallbackText: item?.description || '',
+                    allowSyntheticFallback: false,
+                    contextLabel: buildSectionContextLabel({
+                        profession,
+                        sectionLabel: 'project',
+                        primaryLabel: item?.name || item?.title || 'delivery',
+                        secondaryLabel: item?.techStack || '',
+                        tertiaryLabel: skillsContext,
+                    }),
+                }),
                 contextLabel: buildSectionContextLabel({
                     profession,
                     sectionLabel: 'project',
@@ -2551,15 +2773,27 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
                     secondaryLabel: item?.techStack || '',
                     tertiaryLabel: skillsContext,
                 }),
+                sourceText: item?.description || '',
+                sharedLineKeys,
+                sharedWordKeys,
             }),
         })),
         internships: (Array.isArray(resumeData.internships) ? resumeData.internships : []).map((item) => ({
             company: String(item?.company || '').trim(),
             role: String(item?.role || '').trim(),
-            bullets: normalizeBulletList({
-                text: item?.description || '',
-                fallbackText: item?.description || '',
-                allowSyntheticFallback: false,
+            bullets: enforceGlobalBulletUniqueness({
+                bullets: normalizeBulletList({
+                    text: item?.description || '',
+                    fallbackText: item?.description || '',
+                    allowSyntheticFallback: false,
+                    contextLabel: buildSectionContextLabel({
+                        profession,
+                        sectionLabel: 'internship',
+                        primaryLabel: item?.role || '',
+                        secondaryLabel: item?.company || '',
+                        tertiaryLabel: skillsContext,
+                    }),
+                }),
                 contextLabel: buildSectionContextLabel({
                     profession,
                     sectionLabel: 'internship',
@@ -2567,6 +2801,9 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
                     secondaryLabel: item?.company || '',
                     tertiaryLabel: skillsContext,
                 }),
+                sourceText: item?.description || '',
+                sharedLineKeys,
+                sharedWordKeys,
             }),
         })),
         skills: atsOnly ? missingSkills.slice(0, 20) : normalizeSkills(resumeData.skills),
