@@ -138,9 +138,7 @@ const computeA4FitMetrics = (resumeElement) => {
 
 
 
-const buildPdfHtmlDocument = (resumeElement, fitMetrics = { scale: 1, offsetX: 0 }) => {
-    const safeScale = Number.isFinite(fitMetrics.scale) && fitMetrics.scale > 0 ? fitMetrics.scale : 1;
-    const safeOffsetX = Number.isFinite(fitMetrics.offsetX) && fitMetrics.offsetX > 0 ? fitMetrics.offsetX : 0;
+const buildPdfHtmlDocument = (resumeElement) => {
     const styleTags = Array.from(document.querySelectorAll('style'))
         .map((node) => `<style>${node.textContent || ''}</style>`)
         .join('');
@@ -166,35 +164,62 @@ const buildPdfHtmlDocument = (resumeElement, fitMetrics = { scale: 1, offsetX: 0
     <style>
       @page {
         size: A4;
-        margin: 0;
+        margin: 12mm;
+      }
+      :root {
+        --print-page-height: 297mm;
+        --print-margin: 12mm;
+        --print-content-min-height: calc(var(--print-page-height) - (var(--print-margin) * 2));
       }
       html,
       body {
         margin: 0;
         padding: 0;
-        width: 210mm;
-        height: 297mm;
-        background: #ffffff;
+        width: 100%;
+        min-height: 100%;
+        background: #fff;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
-      .pdf-page {
-        width: ${A4_WIDTH}px;
-        height: ${A4_HEIGHT}px;
-        overflow: hidden;
-        background: #ffffff;
+      #resume-ready {
+        width: 100%;
+        min-height: var(--print-content-min-height);
+        margin: 0 auto;
+        background: #fff;
+        box-sizing: border-box;
       }
-      .pdf-content {
-        width: ${A4_WIDTH}px;
-        transform-origin: top left;
-        transform: translateX(${safeOffsetX}px) scale(${safeScale});
+      #resume-ready #resume-pdf {
+        width: 100% !important;
+        min-height: var(--print-content-min-height) !important;
+        height: auto !important;
+        box-sizing: border-box;
+        overflow: visible !important;
+      }
+      #resume-ready section {
+        break-inside: auto;
+        page-break-inside: auto;
+      }
+      #resume-ready article,
+      #resume-ready .block,
+      #resume-ready li,
+      #resume-ready .resume-item {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      #resume-ready * {
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+      #resume-ready,
+      #resume-ready * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
     </style>
   </head>
   <body>
-    <div class="pdf-page">
-      <div class="pdf-content">${resumeElement.outerHTML}</div>
-    </div>
+    <div id="resume-ready">${resumeElement.outerHTML}</div>
   </body>
 </html>`;
 };
@@ -310,8 +335,7 @@ function ResumePreview({ resumeData, enhancedResume, formData, template }) {
         setDownloadError(null);
 
         try {
-            const fitMetrics = computeA4FitMetrics(resumeElement);
-            const html = buildPdfHtmlDocument(resumeElement, fitMetrics);
+            const html = buildPdfHtmlDocument(resumeElement);
             const responseBlob = await generateResumePdfAPI({
                 html,
                 fileName: 'resume.pdf',
