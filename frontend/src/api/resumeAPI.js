@@ -39,10 +39,10 @@ export const saveResumeBuilderAPI = async (payload) => {
     return response.data;
 };
 
-export const generateResumePdfAPI = async ({ html, fileName = 'resume.pdf' }) => {
+export const generateResumePdfAPI = async ({ html = '', url = '', fileName = 'resume.pdf' }) => {
     const response = await axiosInstance.post(
         '/resume/generate-pdf',
-        { html, fileName },
+        { html, url, fileName },
         {
             responseType: 'blob',
         },
