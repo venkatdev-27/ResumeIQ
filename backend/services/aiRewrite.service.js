@@ -1558,7 +1558,63 @@ const normalizeBulletLineKey = (value = '') =>
     compactToOneLine(value)
         .toLowerCase()
         .replace(/[.!?]+$/g, '')
+        .replace(/[^a-z0-9%\s]/g, ' ')
+        .replace(/\s+/g, ' ')
         .trim();
+
+const escapePattern = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const enforceSingleProjectTitleMention = (bullets = [], title = '') => {
+    const safeTitle = compactToOneLine(title);
+    const safeBullets = Array.isArray(bullets) ? bullets.map((line) => compactToOneLine(line)).filter(Boolean) : [];
+    if (!safeTitle || !safeBullets.length) {
+        return safeBullets;
+    }
+
+    const titleRegex = new RegExp(escapePattern(safeTitle), 'ig');
+    let mentionUsed = false;
+
+    return safeBullets.map((line, index) => {
+        if (!line) {
+            return line;
+        }
+
+        const hasTitle = titleRegex.test(line);
+        titleRegex.lastIndex = 0;
+        if (!hasTitle) {
+            return line;
+        }
+
+        if (!mentionUsed) {
+            mentionUsed = true;
+            return line;
+        }
+
+        const replaced = line
+            .replace(titleRegex, 'the platform')
+            .replace(/\s{2,}/g, ' ')
+            .replace(/\s+([,.;:!?])/g, '$1')
+            .trim();
+
+        if (replaced) {
+            return replaced;
+        }
+
+        if (index === 0) {
+            return line;
+        }
+
+        return ensureSentenceEnding('Improved platform reliability through measurable validation and operational excellence');
+    });
+};
+
+const getBulletBoundaryWordKey = (value = '', position = 'first') => {
+    const tokens = tokenizeWords(value).map((token) => toWordKey(token)).filter(Boolean);
+    if (!tokens.length) {
+        return '';
+    }
+    return position === 'last' ? tokens[tokens.length - 1] : tokens[0];
+};
 
 const buildUniqueBulletLines = ({ lines = [], contextLabel = '', sourceText = '' }) => {
     const usedWordKeys = new Set();
@@ -1605,9 +1661,13 @@ const enforceGlobalBulletUniqueness = ({
     sourceText = '',
     sharedLineKeys = new Set(),
     sharedWordKeys = new Set(),
+    sharedStartWordKeys = new Set(),
+    sharedEndWordKeys = new Set(),
 }) => {
     const result = [];
     const localKeys = new Set();
+    const localStartKeys = new Set();
+    const localEndKeys = new Set();
     const safeBullets = Array.isArray(bullets) ? bullets : [];
 
     const tryCreateUniqueBullet = ({ baseLine = '', attempt = 0 }) =>
@@ -1621,23 +1681,51 @@ const enforceGlobalBulletUniqueness = ({
     const pushIfUnique = (candidate = '', attemptSeed = 0) => {
         let line = String(candidate || '').trim();
         let key = normalizeBulletLineKey(line);
+        let startKey = getBulletBoundaryWordKey(line, 'first');
+        let endKey = getBulletBoundaryWordKey(line, 'last');
         let attempts = 0;
 
         while (
-            (!key || sharedLineKeys.has(key) || localKeys.has(key)) &&
+            (
+                !key ||
+                sharedLineKeys.has(key) ||
+                localKeys.has(key) ||
+                !startKey ||
+                !endKey ||
+                sharedStartWordKeys.has(startKey) ||
+                sharedEndWordKeys.has(endKey) ||
+                localStartKeys.has(startKey) ||
+                localEndKeys.has(endKey)
+            ) &&
             attempts < 8
         ) {
             line = tryCreateUniqueBullet({ baseLine: line || candidate || contextLabel, attempt: attemptSeed + attempts + 1 });
             key = normalizeBulletLineKey(line);
+            startKey = getBulletBoundaryWordKey(line, 'first');
+            endKey = getBulletBoundaryWordKey(line, 'last');
             attempts += 1;
         }
 
-        if (!key || sharedLineKeys.has(key) || localKeys.has(key)) {
+        if (
+            !key ||
+            sharedLineKeys.has(key) ||
+            localKeys.has(key) ||
+            !startKey ||
+            !endKey ||
+            sharedStartWordKeys.has(startKey) ||
+            sharedEndWordKeys.has(endKey) ||
+            localStartKeys.has(startKey) ||
+            localEndKeys.has(endKey)
+        ) {
             return false;
         }
 
         localKeys.add(key);
+        localStartKeys.add(startKey);
+        localEndKeys.add(endKey);
         sharedLineKeys.add(key);
+        sharedStartWordKeys.add(startKey);
+        sharedEndWordKeys.add(endKey);
         result.push(line);
         return true;
     };
@@ -1661,16 +1749,28 @@ const enforceGlobalBulletUniqueness = ({
 
 const buildContextFallbackBullets = (contextLabel = '') => {
     const context = compactToOneLine(contextLabel || '');
+    const seed = toSeed(context);
+    const projectMetric = 12 + (seed % 19);
+    const deliveryMetric = 8 + ((seed + 5) % 17);
+    const isProjectContext = /\bproject\b/i.test(context);
     const contextTokens = dedupeTokensCaseInsensitive(
         tokenizeWords(context).filter((token) => token.length > 2 && isStrongBulletToken(token)),
     );
     const contextText = contextTokens.slice(0, 6).join(' ');
     const scopedContext = contextText ? ` using ${contextText}` : '';
 
+    if (isProjectContext) {
+        return [
+            `Engineered solution modules${scopedContext} to improve response efficiency by ${projectMetric}% with precision.`,
+            `Optimized release workflows${scopedContext} and increased delivery consistency by ${deliveryMetric}% through validation.`,
+            `Strengthened production quality${scopedContext} with traceable testing, safeguards, and operational excellence.`,
+        ];
+    }
+
     return [
         `Delivered measurable implementation outcomes${scopedContext} with accountable execution and quality controls.`,
-        `Implemented reliable workflows${scopedContext} to improve consistency, coordination, and delivery impact.`,
-        `Enhanced role-aligned deliverables${scopedContext} through structured planning, validation, and continuous improvement.`,
+        `Implemented reliable workflows${scopedContext} and improved delivery consistency by ${deliveryMetric}% through validation.`,
+        `Enhanced role-aligned deliverables${scopedContext} through structured planning, verification, and operational excellence.`,
     ];
 };
 
@@ -1719,7 +1819,7 @@ const normalizeBulletList = ({
     });
 };
 
-const buildSkillsContextText = (skills = [], max = 5) =>
+const buildSkillsContextText = (skills = [], max = 3) =>
     normalizeSkills(skills)
         .slice(0, max)
         .join(' ');
@@ -1746,6 +1846,8 @@ const normalizeWorkExperienceSection = ({
     skillsContext = '',
     sharedLineKeys = new Set(),
     sharedWordKeys = new Set(),
+    sharedStartWordKeys = new Set(),
+    sharedEndWordKeys = new Set(),
     allowSyntheticFallback = true,
 }) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
@@ -1785,6 +1887,8 @@ const normalizeWorkExperienceSection = ({
                     sourceText: [safePayload.improvedDescription || safePayload.description || '', sourceItem.description || ''].join(' '),
                     sharedLineKeys,
                     sharedWordKeys,
+                    sharedStartWordKeys,
+                    sharedEndWordKeys,
                 }),
             };
         })
@@ -1798,6 +1902,8 @@ const normalizeProjectsSection = ({
     skillsContext = '',
     sharedLineKeys = new Set(),
     sharedWordKeys = new Set(),
+    sharedStartWordKeys = new Set(),
+    sharedEndWordKeys = new Set(),
     allowSyntheticFallback = true,
 }) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
@@ -1837,9 +1943,15 @@ const normalizeProjectsSection = ({
                     sourceText: [safePayload.improvedDescription || safePayload.description || '', sourceItem.description || ''].join(' '),
                     sharedLineKeys,
                     sharedWordKeys,
+                    sharedStartWordKeys,
+                    sharedEndWordKeys,
                 }),
             };
         })
+        .map((item) => ({
+            ...item,
+            bullets: enforceSingleProjectTitleMention(item.bullets, item.title),
+        }))
         .filter((item) => hasAnyText(item.title, ...item.bullets));
 };
 
@@ -1850,6 +1962,8 @@ const normalizeInternshipsSection = ({
     skillsContext = '',
     sharedLineKeys = new Set(),
     sharedWordKeys = new Set(),
+    sharedStartWordKeys = new Set(),
+    sharedEndWordKeys = new Set(),
     allowSyntheticFallback = true,
 }) => {
     const safePayloadItems = Array.isArray(payloadItems) ? payloadItems : [];
@@ -1889,6 +2003,8 @@ const normalizeInternshipsSection = ({
                     sourceText: [safePayload.improvedDescription || safePayload.description || '', sourceItem.description || ''].join(' '),
                     sharedLineKeys,
                     sharedWordKeys,
+                    sharedStartWordKeys,
+                    sharedEndWordKeys,
                 }),
             };
         })
@@ -2164,6 +2280,8 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
     const skillsContext = buildSkillsContextText(resumeData?.skills);
     const sharedLineKeys = new Set();
     const sharedWordKeys = new Set();
+    const sharedStartWordKeys = new Set();
+    const sharedEndWordKeys = new Set();
 
     return {
         summary: atsOnly
@@ -2176,6 +2294,8 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
             skillsContext,
             sharedLineKeys,
             sharedWordKeys,
+            sharedStartWordKeys,
+            sharedEndWordKeys,
             allowSyntheticFallback: false,
         }),
         projects: normalizeProjectsSection({
@@ -2185,6 +2305,8 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
             skillsContext,
             sharedLineKeys,
             sharedWordKeys,
+            sharedStartWordKeys,
+            sharedEndWordKeys,
             allowSyntheticFallback: false,
         }),
         internships: normalizeInternshipsSection({
@@ -2194,6 +2316,8 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
             skillsContext,
             sharedLineKeys,
             sharedWordKeys,
+            sharedStartWordKeys,
+            sharedEndWordKeys,
             allowSyntheticFallback: false,
         }),
         skills: optimizedSkills,
@@ -2357,6 +2481,8 @@ const buildSummaryPreviewResponse = (summary = '', resumeData = {}) => {
     const skillsContext = buildSkillsContextText(resumeData?.skills);
     const sharedLineKeys = new Set();
     const sharedWordKeys = new Set();
+    const sharedStartWordKeys = new Set();
+    const sharedEndWordKeys = new Set();
 
     return {
         summary,
@@ -2367,6 +2493,8 @@ const buildSummaryPreviewResponse = (summary = '', resumeData = {}) => {
             skillsContext,
             sharedLineKeys,
             sharedWordKeys,
+            sharedStartWordKeys,
+            sharedEndWordKeys,
             allowSyntheticFallback: true,
         }),
         projects: normalizeProjectsSection({
@@ -2376,6 +2504,8 @@ const buildSummaryPreviewResponse = (summary = '', resumeData = {}) => {
             skillsContext,
             sharedLineKeys,
             sharedWordKeys,
+            sharedStartWordKeys,
+            sharedEndWordKeys,
             allowSyntheticFallback: true,
         }),
         internships: normalizeInternshipsSection({
@@ -2385,6 +2515,8 @@ const buildSummaryPreviewResponse = (summary = '', resumeData = {}) => {
             skillsContext,
             sharedLineKeys,
             sharedWordKeys,
+            sharedStartWordKeys,
+            sharedEndWordKeys,
             allowSyntheticFallback: true,
         }),
         skills: [],
@@ -2511,6 +2643,8 @@ BULLET RULES (STRICT):
 7. Use only user-provided skills, experience, internships, and projects as context.
 8. Never use dummy placeholders, generic filler, or template-like repeated lines.
 9. Use highly accurate, precise, domain-specific, verifiable vocabulary words; avoid vague adjectives like good/great/best.
+10. In a single bullet, reference at most 2 or 3 relevant technologies; never dump full tech stacks.
+11. For each project, mention the project title in only one bullet line out of three.
 
 SKILLS RULES:
 1. Keep only relevant technical skills missing or weak in the current resume.
@@ -2594,6 +2728,8 @@ Scope:
 6. If a section does not exist, return empty string/array for that section.
 7. Return valid JSON only.
 8. Optimize wording and keyword coverage for 90+ ATS potential where the source data supports it.
+9. In a single bullet, reference at most 2 or 3 relevant technologies; never dump full tech stacks.
+10. For each project, mention the project title in only one bullet line out of three.
 
 Input:
 resumeData: ${resumeDataPreview}
@@ -2693,6 +2829,8 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
     const skillsContext = buildSkillsContextText(resumeData?.skills);
     const sharedLineKeys = new Set();
     const sharedWordKeys = new Set();
+    const sharedStartWordKeys = new Set();
+    const sharedEndWordKeys = new Set();
 
     const whyScoreIsLower = [];
     if (missingKeywords.length) {
@@ -2749,11 +2887,13 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
                 sourceText: item?.description || '',
                 sharedLineKeys,
                 sharedWordKeys,
+                sharedStartWordKeys,
+                sharedEndWordKeys,
             }),
         })),
         projects: (Array.isArray(resumeData.projects) ? resumeData.projects : []).map((item) => ({
             title: String(item?.name || item?.title || '').trim(),
-            bullets: enforceGlobalBulletUniqueness({
+            bullets: enforceSingleProjectTitleMention(enforceGlobalBulletUniqueness({
                 bullets: normalizeBulletList({
                     text: item?.description || '',
                     fallbackText: item?.description || '',
@@ -2776,7 +2916,9 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
                 sourceText: item?.description || '',
                 sharedLineKeys,
                 sharedWordKeys,
-            }),
+                sharedStartWordKeys,
+                sharedEndWordKeys,
+            }), String(item?.name || item?.title || '').trim()),
         })),
         internships: (Array.isArray(resumeData.internships) ? resumeData.internships : []).map((item) => ({
             company: String(item?.company || '').trim(),
@@ -2804,6 +2946,8 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
                 sourceText: item?.description || '',
                 sharedLineKeys,
                 sharedWordKeys,
+                sharedStartWordKeys,
+                sharedEndWordKeys,
             }),
         })),
         skills: atsOnly ? missingSkills.slice(0, 20) : normalizeSkills(resumeData.skills),
