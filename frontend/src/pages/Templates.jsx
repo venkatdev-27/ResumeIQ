@@ -39,20 +39,13 @@ function Templates() {
                                     <p className="mt-0.5 text-xs text-[#4b5563] max-[350px]:text-[11px]">{template.tone}</p>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-2">
+                                <div className="flex justify-center pt-1">
                                     <button
                                         type="button"
                                         onClick={() => setPreviewTemplate(template)}
-                                        className="inline-flex h-9 items-center justify-center rounded-lg border border-[#a8b5c8] bg-white px-3 text-sm font-semibold text-[#111827] transition hover:border-[#6b7a91] hover:bg-[#f8fafc] max-[350px]:h-8 max-[350px]:text-xs"
+                                        className="inline-flex h-9 min-w-[9.5rem] items-center justify-center rounded-lg border border-[#a8b5c8] bg-white px-3 text-sm font-semibold text-[#111827] transition hover:border-[#6b7a91] hover:bg-[#f8fafc] max-[350px]:h-8 max-[350px]:min-w-[8.5rem] max-[350px]:text-xs"
                                     >
                                         Preview
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleStart(template.id)}
-                                        className="inline-flex h-9 items-center justify-center rounded-lg border border-emerald-700 bg-emerald-600 px-3 text-sm font-semibold text-white transition hover:bg-emerald-700 max-[350px]:h-8 max-[350px]:text-xs"
-                                    >
-                                        Start
                                     </button>
                                 </div>
                             </div>
