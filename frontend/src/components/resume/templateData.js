@@ -37,18 +37,23 @@ const sentence = (value = '') => {
 };
 
 const BULLET_STRONG_ENDINGS = [
-    'excellence',
-    'resilience',
-    'precision',
-    'reliability',
-    'scalability',
-    'stability',
-    'efficiency',
-    'maintainability',
-    'performance',
-    'readiness',
-    'assurance',
-    'consistency',
+    'accountability', 'accuracy', 'adaptability', 'adoption', 'advancement', 'alignment', 'analytics', 'assurance',
+    'availability', 'awareness', 'benchmarking', 'calibration', 'capability', 'certainty', 'clarity', 'cohesion',
+    'collaboration', 'compliance', 'confidence', 'consistency', 'continuity', 'control', 'coordination', 'correctness',
+    'credibility', 'craftsmanship', 'coverage', 'delivery', 'dependability', 'depth', 'discipline', 'discoverability',
+    'durability', 'efficiency', 'elegance', 'enablement', 'enhancement', 'equilibrium', 'escalation', 'evaluation',
+    'evidence', 'excellence', 'execution', 'expansion', 'expertise', 'feasibility', 'fidelity', 'flexibility',
+    'focus', 'foresight', 'governance', 'guardrails', 'harmony', 'hardening', 'hygiene', 'impact',
+    'improvement', 'innovation', 'insight', 'integrity', 'interoperability', 'iteration', 'knowledge',
+    'latency', 'leadership', 'maintainability', 'management', 'maturity', 'metrics', 'modernization', 'monitoring',
+    'observability', 'optimization', 'orchestration', 'ownership', 'performance', 'planning', 'portability',
+    'predictability', 'preparedness', 'precision', 'prevention', 'productivity', 'progress', 'quality', 'readability',
+    'readiness', 'recoverability', 'refinement', 'reliability', 'remediation', 'repeatability', 'resilience',
+    'responsiveness', 'rigor', 'robustness', 'scalability', 'security', 'serviceability', 'simplicity', 'stability',
+    'standardization', 'steadiness', 'strategy', 'streamlining', 'strength', 'structure', 'sustainability',
+    'synchronization', 'telemetry', 'thoroughness', 'timeliness', 'traceability', 'transparency', 'trust',
+    'uptime', 'usability', 'validation', 'value', 'velocity', 'verification', 'versatility', 'visibility',
+    'workflow', 'excellenceplus', 'stewardship', 'coherence', 'resolvability', 'continuance', 'soundness', 'readaptability',
 ];
 
 const BULLET_WEAK_ENDINGS = new Set([
@@ -156,6 +161,23 @@ const stripSkillsFromLine = (line = '', skills = []) => {
 const pickStrongBulletEnding = (seedValue = 0) =>
     BULLET_STRONG_ENDINGS[Math.abs(Number(seedValue) || 0) % BULLET_STRONG_ENDINGS.length];
 
+const pickRandomUnusedStrongEnding = (seedValue = 0, usedEndingKeys = null) => {
+    if (!(usedEndingKeys instanceof Set)) {
+        return pickStrongBulletEnding(seedValue);
+    }
+
+    const available = BULLET_STRONG_ENDINGS.filter((token) => {
+        const key = String(token || '').toLowerCase();
+        return key && !usedEndingKeys.has(key);
+    });
+
+    if (available.length) {
+        return available[Math.abs(Number(seedValue) || 0) % available.length];
+    }
+
+    return pickStrongBulletEnding(seedValue);
+};
+
 const enforceStrongBulletEnding = (value = '', seedValue = 0, usedEndingKeys = null) => {
     const base = cleanOneLine(value).replace(/^[\u2022*-]\s*/g, '').replace(/[.!?]+$/g, '').trim();
     if (!base) {
@@ -172,16 +194,7 @@ const enforceStrongBulletEnding = (value = '', seedValue = 0, usedEndingKeys = n
         .toLowerCase()
         .replace(/[^a-z0-9%-]/g, '');
 
-    const availableEnding = BULLET_STRONG_ENDINGS.find((token, index) => {
-        const key = String(token || '').toLowerCase();
-        if (!key) {
-            return false;
-        }
-        if (usedEndingKeys instanceof Set && usedEndingKeys.has(key)) {
-            return false;
-        }
-        return index >= 0;
-    });
+    const availableEnding = pickRandomUnusedStrongEnding(seedValue, usedEndingKeys);
 
     const shouldReplaceEnding =
         !lastTokenKey ||
@@ -531,7 +544,7 @@ const A4_BULLET_PADDING_TOKENS = [
     'delivery',
 ];
 
-const fitBulletLineForA4 = (value = '', maxChars = A4_BULLET_MAX_CHARS) => {
+const fitBulletLineForA4 = (value = '', maxChars = A4_BULLET_MAX_CHARS, usedEndingKeys = null) => {
     const compact = cleanOneLine(value).replace(/^[\u2022*-]\s*/g, '');
     if (!compact) {
         return '';
@@ -553,7 +566,7 @@ const fitBulletLineForA4 = (value = '', maxChars = A4_BULLET_MAX_CHARS) => {
         .replace(/\s+([,.;:!?])/g, '$1')
         .replace(/[,:;]+$/g, '')
         .trim();
-    return normalizeBulletForA4(compacted, safeMaxChars, hashSeed(compacted));
+    return normalizeBulletForA4(compacted, safeMaxChars, hashSeed(compacted), usedEndingKeys);
 };
 
 const padBulletLineForA4 = (
@@ -561,12 +574,13 @@ const padBulletLineForA4 = (
     options = {
         minChars: A4_BULLET_MIN_CHARS,
         maxChars: A4_BULLET_MAX_CHARS,
+        usedEndingKeys: null,
     },
 ) => {
-    const { minChars = A4_BULLET_MIN_CHARS, maxChars = A4_BULLET_MAX_CHARS } = options || {};
+    const { minChars = A4_BULLET_MIN_CHARS, maxChars = A4_BULLET_MAX_CHARS, usedEndingKeys = null } = options || {};
     const safeMaxChars = Math.max(40, Number(maxChars) || A4_BULLET_MAX_CHARS);
     const safeMinChars = Math.max(60, Math.min(safeMaxChars - 2, Number(minChars) || A4_BULLET_MIN_CHARS));
-    const fitted = fitBulletLineForA4(value, safeMaxChars);
+    const fitted = fitBulletLineForA4(value, safeMaxChars, usedEndingKeys);
     if (!fitted) {
         return '';
     }
@@ -592,17 +606,22 @@ const padBulletLineForA4 = (
         padded = tokens.join(' ');
     }
 
-    return normalizeBulletForA4(padded, safeMaxChars, hashSeed(`${padded}|${value}`));
+    return normalizeBulletForA4(padded, safeMaxChars, hashSeed(`${padded}|${value}`), usedEndingKeys);
 };
 
-const finalizeA4BulletLines = (lines = [], fallback = [], maxLines = 3) =>
-    ensureBulletLines(
-        (Array.isArray(lines) ? lines : []).map((line) => padBulletLineForA4(line)).filter(Boolean),
-        (Array.isArray(fallback) ? fallback : []).map((line) => padBulletLineForA4(line)).filter(Boolean),
-        maxLines,
-    )
-        .map((line) => padBulletLineForA4(line))
+const finalizeA4BulletLines = (lines = [], fallback = [], maxLines = 3) => {
+    const usedEndingKeys = new Set();
+    const baseLines = (Array.isArray(lines) ? lines : [])
+        .map((line) => padBulletLineForA4(line, { usedEndingKeys }))
         .filter(Boolean);
+    const fallbackLines = (Array.isArray(fallback) ? fallback : [])
+        .map((line) => padBulletLineForA4(line, { usedEndingKeys }))
+        .filter(Boolean);
+
+    return ensureBulletLines(baseLines, fallbackLines, maxLines)
+        .map((line) => padBulletLineForA4(line, { usedEndingKeys }))
+        .filter(Boolean);
+};
 
 const clampBulletLineCount = (value = 3) => {
     const parsed = Number(value);
