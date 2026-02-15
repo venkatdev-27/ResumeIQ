@@ -2160,23 +2160,49 @@ const buildLivePreviewSummaryFallback = (resumeData = {}) => {
     return normalizeSummary('', resumeData);
 };
 
-const buildSummaryPreviewResponse = (summary = '') => ({
-    summary,
-    workExperience: [],
-    projects: [],
-    internships: [],
-    skills: [],
-    certifications: [],
-    achievements: [],
-    hobbies: [],
-    atsFeedback: {
-        currentScore: '',
-        whyScoreIsLower: [],
-        missingKeywords: [],
-        missingSkills: [],
-        improvementSteps: [],
-    },
-});
+const buildSummaryPreviewResponse = (summary = '', resumeData = {}) => {
+    const profession =
+        deriveProfessionalTitle(resumeData) ||
+        compactToOneLine(resumeData?.personalDetails?.title || '') ||
+        'Technology Professional';
+    const skillsContext = buildSkillsContextText(resumeData?.skills);
+
+    return {
+        summary,
+        workExperience: normalizeWorkExperienceSection({
+            payloadItems: [],
+            sourceItems: resumeData?.workExperience,
+            profession,
+            skillsContext,
+            allowSyntheticFallback: true,
+        }),
+        projects: normalizeProjectsSection({
+            payloadItems: [],
+            sourceItems: resumeData?.projects,
+            profession,
+            skillsContext,
+            allowSyntheticFallback: true,
+        }),
+        internships: normalizeInternshipsSection({
+            payloadItems: [],
+            sourceItems: resumeData?.internships,
+            profession,
+            skillsContext,
+            allowSyntheticFallback: true,
+        }),
+        skills: [],
+        certifications: [],
+        achievements: [],
+        hobbies: [],
+        atsFeedback: {
+            currentScore: '',
+            whyScoreIsLower: [],
+            missingKeywords: [],
+            missingSkills: [],
+            improvementSteps: [],
+        },
+    };
+};
 
 const buildLivePreviewSummaryPrompt = ({ resumeData }) => {
     const targetRole = deriveProfessionalTitle(resumeData) || compactToOneLine(resumeData?.personalDetails?.title || '') || 'Not specified';
@@ -2599,9 +2625,9 @@ const improveResumeWithAI = async ({
             });
 
             const summary = parseSummaryPreviewResponse(responseText, normalizedResumeData);
-            return buildSummaryPreviewResponse(summary);
+            return buildSummaryPreviewResponse(summary, normalizedResumeData);
         } catch (_error) {
-            return buildSummaryPreviewResponse(buildLivePreviewSummaryFallback(normalizedResumeData));
+            return buildSummaryPreviewResponse(buildLivePreviewSummaryFallback(normalizedResumeData), normalizedResumeData);
         }
     }
 

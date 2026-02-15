@@ -559,6 +559,7 @@ export const generateLivePreviewSummary = createAsyncThunk(
                 return {
                     summary: '',
                     sourceSignature: signature,
+                    enhancedResume: mergeResumeData(resumeData),
                 };
             }
 
@@ -573,9 +574,17 @@ export const generateLivePreviewSummary = createAsyncThunk(
                 throw new Error('Unable to generate a valid live preview summary.');
             }
 
+            const enhancedResume = applyAiImprovementsToResume(resumeData, {
+                summary,
+                workExperience: Array.isArray(data?.workExperience) ? data.workExperience : [],
+                projects: Array.isArray(data?.projects) ? data.projects : [],
+                internships: Array.isArray(data?.internships) ? data.internships : [],
+            });
+
             return {
                 summary,
                 sourceSignature: signature,
+                enhancedResume,
             };
         } catch (error) {
             return rejectWithValue(getErrorMessage(error, 'Unable to generate live preview summary.'));
@@ -808,6 +817,11 @@ const resumeSlice = createSlice({
                 const currentSignature = buildLivePreviewSourceSignature(state.resumeData);
 
                 if (sourceSignature && currentSignature && sourceSignature !== currentSignature) {
+                    return;
+                }
+
+                if (action.payload?.enhancedResume && typeof action.payload.enhancedResume === 'object') {
+                    state.enhancedResume = mergeResumeData(action.payload.enhancedResume);
                     return;
                 }
 
