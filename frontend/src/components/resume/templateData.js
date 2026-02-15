@@ -36,6 +36,40 @@ const sentence = (value = '') => {
     return /[.!?]$/.test(line) ? line : `${line}.`;
 };
 
+const BULLET_STRONG_ENDINGS = [
+    'excellence',
+    'resilience',
+    'precision',
+    'reliability',
+    'scalability',
+    'stability',
+    'efficiency',
+    'maintainability',
+    'performance',
+    'readiness',
+    'assurance',
+    'consistency',
+];
+
+const BULLET_WEAK_ENDINGS = new Set([
+    'and',
+    'or',
+    'with',
+    'through',
+    'for',
+    'to',
+    'of',
+    'in',
+    'on',
+    'at',
+    'by',
+    'as',
+    'from',
+    'into',
+    'using',
+    'via',
+]);
+
 const hashSeed = (value = '') =>
     [...String(value || '')].reduce((sum, char, index) => sum + char.charCodeAt(0) * (index + 1), 0);
 
@@ -45,6 +79,97 @@ const pickVariant = (variants = [], seed = 0) => {
         return '';
     }
     return pool[Math.abs(Number(seed) || 0) % pool.length];
+};
+
+const normalizeTechToken = (value = '') =>
+    cleanOneLine(value)
+        .replace(/[|/]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+const splitTechTokens = (value = '') =>
+    String(value || '')
+        .split(/[,;|]+/)
+        .flatMap((part) => normalizeTechToken(part).split(/[.\s]+/))
+        .map((token) => normalizeTechToken(token))
+        .filter(Boolean);
+
+const limitTechStackForBullet = (techStack = '', seed = 0) => {
+    const rawTokens = splitTechTokens(techStack);
+    const seen = new Set();
+    const tokens = rawTokens.filter((token) => {
+        const key = token.toLowerCase();
+        if (!key || seen.has(key)) {
+            return false;
+        }
+        seen.add(key);
+        return true;
+    });
+
+    if (!tokens.length) {
+        return 'core technologies';
+    }
+
+    const targetCount = Math.min(3, Math.max(2, tokens.length >= 2 ? 2 + (Math.abs(seed) % 2) : 1));
+    const selected = [];
+    let cursor = Math.abs(seed) % tokens.length;
+    while (selected.length < targetCount && selected.length < tokens.length) {
+        const candidate = tokens[cursor % tokens.length];
+        if (candidate && !selected.some((item) => item.toLowerCase() === candidate.toLowerCase())) {
+            selected.push(candidate);
+        }
+        cursor += 1;
+    }
+
+    return selected.join(', ');
+};
+
+const pickStrongBulletEnding = (seedValue = 0) =>
+    BULLET_STRONG_ENDINGS[Math.abs(Number(seedValue) || 0) % BULLET_STRONG_ENDINGS.length];
+
+const enforceStrongBulletEnding = (value = '', seedValue = 0) => {
+    const base = cleanOneLine(value).replace(/^[\u2022*-]\s*/g, '').replace(/[.!?]+$/g, '').trim();
+    if (!base) {
+        return '';
+    }
+
+    const tokens = base.split(/\s+/).filter(Boolean);
+    if (!tokens.length) {
+        return '';
+    }
+
+    const lastIndex = tokens.length - 1;
+    const lastTokenKey = String(tokens[lastIndex] || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9%-]/g, '');
+    if (!lastTokenKey || BULLET_WEAK_ENDINGS.has(lastTokenKey)) {
+        tokens[lastIndex] = pickStrongBulletEnding(seedValue);
+    }
+
+    return `${tokens.join(' ')}.`;
+};
+
+const normalizeBulletForA4 = (value = '', maxChars = 92, seedValue = 0) => {
+    const safeMaxChars = Math.max(40, Number(maxChars) || 92);
+    let candidate = enforceStrongBulletEnding(value, seedValue);
+    if (!candidate) {
+        return '';
+    }
+
+    while (candidate.length > safeMaxChars) {
+        const withoutEnding = candidate.replace(/[.!?]+$/g, '').trim();
+        const tokens = withoutEnding.split(/\s+/).filter(Boolean);
+        if (tokens.length <= 1) {
+            break;
+        }
+        tokens.pop();
+        candidate = enforceStrongBulletEnding(tokens.join(' '), seedValue);
+        if (!candidate) {
+            break;
+        }
+    }
+
+    return candidate;
 };
 
 const buildSummaryFallback = (source = {}) => {
@@ -72,87 +197,96 @@ const buildSummaryFallback = (source = {}) => {
     return lines.join(' ');
 };
 
-const buildWorkFallbackDescription = (item = {}) => {
+const buildWorkFallbackDescription = (item = {}, itemIndex = 0) => {
     const role = clean(item.role) || 'Role';
     const company = clean(item.company) || 'organization';
-    const seed = hashSeed(`${role}|${company}|work`);
+    const seed = hashSeed(`${role}|${company}|work|${itemIndex}`);
+    const ownershipMetric = 10 + (seed % 17);
     const lineTwo = pickVariant(
         [
-            `Executed ${role} assignments with structured planning, status tracking, and quality checkpoints at ${company}`,
-            `Coordinated ${role} deliverables at ${company} through requirement analysis, implementation, and disciplined validation`,
-            `Supported ${company} objectives by delivering ${role} tasks with measurable consistency and technical clarity`,
+            `Orchestrated ${role} assignments at ${company}, improving cycle reliability by ${ownershipMetric}% through governance`,
+            `Coordinated ${role} deliverables at ${company}, reducing rework by ${ownershipMetric}% via validation`,
+            `Delivered ${role} outcomes at ${company}, increasing execution predictability by ${ownershipMetric}% through instrumentation`,
         ],
         seed + 1,
     );
     const lineThree = pickVariant(
         [
-            `Improved workflow reliability by documenting decisions, validating outputs, and resolving issues on schedule`,
-            `Strengthened delivery outcomes with test-backed verification, issue triage, and collaborative execution routines`,
-            `Maintained execution quality through evidence-based updates, defect prevention, and dependable handoff practices`,
+            'Elevated handoff clarity with validated documentation, risk triage, and release-confidence discipline',
+            'Strengthened delivery assurance with defect-prevention controls, traceable evidence, and milestone accountability',
+            'Maintained operational continuity through systematic verification, escalation hygiene, and measurable closure',
         ],
         seed + 2,
     );
 
     return [
-        sentence(`Delivered ${role} responsibilities at ${company} with consistent execution quality and measurable outcomes`),
-        sentence(lineTwo),
-        sentence(lineThree),
+        sentence(`Directed ${role} responsibilities at ${company} with accountable execution and dependable outcomes`),
+        enforceStrongBulletEnding(lineTwo, seed + 3),
+        enforceStrongBulletEnding(lineThree, seed + 4),
     ].join('\n');
 };
 
-const buildProjectFallbackDescription = (item = {}) => {
+const buildProjectFallbackDescription = (item = {}, itemIndex = 0) => {
     const name = clean(item.name) || 'Project';
     const tech = clean(item.techStack) || 'relevant technologies';
-    const seed = hashSeed(`${name}|${tech}|project`);
+    const seed = hashSeed(`${name}|${tech}|project|${itemIndex}`);
+    const techFocus = limitTechStackForBullet(tech, seed);
+    const projectAlias = pickVariant(['the platform', 'the solution', 'the application'], seed + 21);
+    const performanceGain = 12 + (seed % 19);
+    const reliabilityGain = 8 + ((seed + 7) % 21);
     const lineTwo = pickVariant(
         [
-            `Integrated functional requirements in ${name} scope while preserving technical quality and maintainability`,
-            `Engineered ${name} modules with structured architecture decisions and practical implementation safeguards`,
-            `Delivered ${name} increments through iterative execution, requirement alignment, and dependable quality controls`,
+            `Engineered ${projectAlias} architecture in ${techFocus}, reducing response latency by ${performanceGain}% through optimization`,
+            `Implemented ${projectAlias} modules using ${techFocus}, improving throughput by ${performanceGain}% via profiling`,
+            `Optimized ${projectAlias} workflows with ${techFocus}, cutting processing overhead by ${performanceGain}% through refactoring`,
         ],
         seed + 1,
     );
     const lineThree = pickVariant(
         [
-            `Validated ${name} outcomes through systematic testing, issue remediation, and release-readiness checks`,
-            `Improved ${name} stability using defect triage, regression control, and measured optimization cycles`,
-            `Strengthened ${name} reliability with documentation discipline, verification coverage, and iterative refinements`,
+            `Hardened ${projectAlias} quality controls, increasing defect-resolution efficiency by ${reliabilityGain}% and observability`,
+            `Strengthened ${projectAlias} release-readiness, improving deployment reliability by ${reliabilityGain}% through safeguards`,
+            `Elevated ${projectAlias} validation coverage, improving production resilience by ${reliabilityGain}% with governance`,
         ],
         seed + 2,
     );
 
     return [
-        sentence(`Built ${name} features using ${tech} with maintainable implementation practices and measurable impact`),
-        sentence(lineTwo),
-        sentence(lineThree),
+        enforceStrongBulletEnding(
+            `Architected ${name} capabilities with ${techFocus}, improving delivery efficiency by ${performanceGain}% through precision`,
+            seed + 3,
+        ),
+        enforceStrongBulletEnding(lineTwo, seed + 4),
+        enforceStrongBulletEnding(lineThree, seed + 5),
     ].join('\n');
 };
 
-const buildInternshipFallbackDescription = (item = {}) => {
+const buildInternshipFallbackDescription = (item = {}, itemIndex = 0) => {
     const role = clean(item.role) || 'Intern';
     const company = clean(item.company) || 'organization';
-    const seed = hashSeed(`${role}|${company}|internship`);
+    const seed = hashSeed(`${role}|${company}|internship|${itemIndex}`);
+    const deliveryGain = 9 + (seed % 16);
     const lineTwo = pickVariant(
         [
-            `Supported project activities at ${company} through analysis, implementation support, and technical documentation`,
-            `Contributed to ${company} deliverables by translating requirements into implementation-ready technical tasks`,
-            `Assisted ${company} teams with structured execution, progress communication, and task-level quality validation`,
+            `Supported ${company} initiatives by translating requirements into implementation-ready tasks with traceability`,
+            `Contributed to ${company} deliverables through structured analysis, tooling support, and disciplined validation`,
+            `Assisted ${company} teams with execution updates, quality checkpoints, and documentation continuity`,
         ],
         seed + 1,
     );
     const lineThree = pickVariant(
         [
-            'Strengthened delivery quality by resolving issues, validating fixes, and tracking completion milestones',
-            'Improved execution consistency through documented updates, verification checks, and collaborative follow-through',
-            'Maintained dependable delivery by escalating blockers early and closing tasks with validated outcomes',
+            `Improved task completion velocity by ${deliveryGain}% through defect triage and verification discipline`,
+            `Increased execution consistency by ${deliveryGain}% using documented updates and milestone accountability`,
+            `Raised delivery quality by ${deliveryGain}% with proactive escalation and closure validation`,
         ],
         seed + 2,
     );
 
     return [
         sentence(`Executed ${role} tasks at ${company} with accountable ownership and delivery consistency`),
-        sentence(lineTwo),
-        sentence(lineThree),
+        enforceStrongBulletEnding(lineTwo, seed + 3),
+        enforceStrongBulletEnding(lineThree, seed + 4),
     ].join('\n');
 };
 
@@ -184,8 +318,8 @@ const dedupeLines = (value = []) => {
         });
 };
 
-const A4_BULLET_MAX_CHARS = 92;
-const A4_BULLET_MIN_CHARS = 84;
+const A4_BULLET_MAX_CHARS = 78;
+const A4_BULLET_MIN_CHARS = 68;
 const A4_BULLET_PADDING_TOKENS = [
     'with',
     'measurable',
@@ -216,10 +350,11 @@ const fitBulletLineForA4 = (value = '', maxChars = A4_BULLET_MAX_CHARS) => {
         fitted = words.join(' ');
     }
 
-    return fitted
+    const compacted = fitted
         .replace(/\s+([,.;:!?])/g, '$1')
         .replace(/[,:;]+$/g, '')
         .trim();
+    return normalizeBulletForA4(compacted, safeMaxChars, hashSeed(compacted));
 };
 
 const padBulletLineForA4 = (
@@ -258,7 +393,7 @@ const padBulletLineForA4 = (
         padded = tokens.join(' ');
     }
 
-    return fitBulletLineForA4(padded, safeMaxChars);
+    return normalizeBulletForA4(padded, safeMaxChars, hashSeed(`${padded}|${value}`));
 };
 
 const finalizeA4BulletLines = (lines = [], fallback = [], maxLines = 3) =>
@@ -326,12 +461,12 @@ const normalizePersonalDetails = (value = {}, source = {}) => {
 
 const normalizeWorkExperience = (value = []) =>
     (Array.isArray(value) ? value : [])
-        .map((item = {}) => ({
+        .map((item = {}, index) => ({
             company: clean(item.company),
             role: clean(item.role),
             startDate: clean(item.startDate),
             endDate: clean(item.endDate),
-            description: normalizeMultiline(item.description) || buildWorkFallbackDescription(item),
+            description: normalizeMultiline(item.description) || buildWorkFallbackDescription(item, index),
             bulletMaxLines: 3,
         }))
         .filter((item) => hasAnyValue(item, ['company', 'role', 'startDate', 'endDate', 'description']))
@@ -339,23 +474,23 @@ const normalizeWorkExperience = (value = []) =>
 
 const normalizeProjects = (value = []) =>
     (Array.isArray(value) ? value : [])
-        .map((item = {}) => ({
+        .map((item = {}, index) => ({
             name: clean(item.name),
             techStack: clean(item.techStack),
             link: clean(item.link),
-            description: normalizeMultiline(item.description) || buildProjectFallbackDescription(item),
+            description: normalizeMultiline(item.description) || buildProjectFallbackDescription(item, index),
             bulletMaxLines: 3,
         }))
         .filter((item) => hasAnyValue(item, ['name', 'techStack', 'link', 'description']));
 
 const normalizeInternships = (value = []) =>
     (Array.isArray(value) ? value : [])
-        .map((item = {}) => ({
+        .map((item = {}, index) => ({
             company: clean(item.company),
             role: clean(item.role),
             startDate: clean(item.startDate),
             endDate: clean(item.endDate),
-            description: normalizeMultiline(item.description) || buildInternshipFallbackDescription(item),
+            description: normalizeMultiline(item.description) || buildInternshipFallbackDescription(item, index),
             bulletMaxLines: 3,
         }))
         .filter((item) => hasAnyValue(item, ['company', 'role', 'startDate', 'endDate', 'description']));
