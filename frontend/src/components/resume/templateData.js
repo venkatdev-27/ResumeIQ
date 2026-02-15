@@ -120,10 +120,43 @@ const pickCoreSkills = (sources = [], seed = 0, min = 2, max = 3) => {
     return selected.slice(0, max);
 };
 
+const escapeRegExp = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const countMentionedSkills = (line = '', skills = []) => {
+    const text = cleanOneLine(line);
+    return (Array.isArray(skills) ? skills : []).reduce((count, skill) => {
+        const token = cleanOneLine(skill);
+        if (!token) {
+            return count;
+        }
+        const pattern = new RegExp(`\\b${escapeRegExp(token)}\\b`, 'i');
+        return count + (pattern.test(text) ? 1 : 0);
+    }, 0);
+};
+
+const stripSkillsFromLine = (line = '', skills = []) => {
+    let text = cleanOneLine(line);
+    (Array.isArray(skills) ? skills : []).forEach((skill) => {
+        const token = cleanOneLine(skill);
+        if (!token) {
+            return;
+        }
+        const pattern = new RegExp(`\\b${escapeRegExp(token)}\\b`, 'ig');
+        text = text.replace(pattern, '');
+    });
+
+    return text
+        .replace(/\s+([,.;:!?])/g, '$1')
+        .replace(/\s{2,}/g, ' ')
+        .replace(/,\s*,/g, ',')
+        .replace(/\b(using|with)\s*(,)?\s*$/i, '')
+        .trim();
+};
+
 const pickStrongBulletEnding = (seedValue = 0) =>
     BULLET_STRONG_ENDINGS[Math.abs(Number(seedValue) || 0) % BULLET_STRONG_ENDINGS.length];
 
-const enforceStrongBulletEnding = (value = '', seedValue = 0) => {
+const enforceStrongBulletEnding = (value = '', seedValue = 0, usedEndingKeys = null) => {
     const base = cleanOneLine(value).replace(/^[\u2022*-]\s*/g, '').replace(/[.!?]+$/g, '').trim();
     if (!base) {
         return '';
@@ -138,16 +171,46 @@ const enforceStrongBulletEnding = (value = '', seedValue = 0) => {
     const lastTokenKey = String(tokens[lastIndex] || '')
         .toLowerCase()
         .replace(/[^a-z0-9%-]/g, '');
-    if (!lastTokenKey || BULLET_WEAK_ENDINGS.has(lastTokenKey) || /ing$/.test(lastTokenKey)) {
-        tokens[lastIndex] = pickStrongBulletEnding(seedValue);
+
+    const availableEnding = BULLET_STRONG_ENDINGS.find((token, index) => {
+        const key = String(token || '').toLowerCase();
+        if (!key) {
+            return false;
+        }
+        if (usedEndingKeys instanceof Set && usedEndingKeys.has(key)) {
+            return false;
+        }
+        return index >= 0;
+    });
+
+    const shouldReplaceEnding =
+        !lastTokenKey ||
+        BULLET_WEAK_ENDINGS.has(lastTokenKey) ||
+        /ing$/.test(lastTokenKey) ||
+        !BULLET_STRONG_ENDINGS.includes(lastTokenKey) ||
+        (usedEndingKeys instanceof Set && usedEndingKeys.has(lastTokenKey));
+
+    const endingWord = shouldReplaceEnding
+        ? availableEnding || pickStrongBulletEnding(seedValue)
+        : lastTokenKey;
+
+    const contentTokens = shouldReplaceEnding
+        ? tokens.slice(0, Math.max(0, tokens.length - 1))
+        : tokens.slice(0, Math.max(0, tokens.length - 1));
+
+    const body = contentTokens.join(' ').replace(/[,.!?;:]+$/g, '').trim();
+    const line = body ? `${body}, ${endingWord}` : endingWord;
+
+    if (usedEndingKeys instanceof Set) {
+        usedEndingKeys.add(String(endingWord || '').toLowerCase());
     }
 
-    return `${tokens.join(' ').replace(/[,.!?;:]+$/g, '')}.`;
+    return line.trim();
 };
 
-const normalizeBulletForA4 = (value = '', maxChars = 92, seedValue = 0) => {
+const normalizeBulletForA4 = (value = '', maxChars = 92, seedValue = 0, usedEndingKeys = null) => {
     const safeMaxChars = Math.max(40, Number(maxChars) || 92);
-    let candidate = enforceStrongBulletEnding(value, seedValue);
+    let candidate = enforceStrongBulletEnding(value, seedValue, usedEndingKeys);
     if (!candidate) {
         return '';
     }
@@ -159,7 +222,7 @@ const normalizeBulletForA4 = (value = '', maxChars = 92, seedValue = 0) => {
             break;
         }
         tokens.pop();
-        candidate = enforceStrongBulletEnding(tokens.join(' '), seedValue);
+        candidate = enforceStrongBulletEnding(tokens.join(' '), seedValue, usedEndingKeys);
         if (!candidate) {
             break;
         }
@@ -239,17 +302,17 @@ const buildProjectFallbackDescription = (item = {}, itemIndex = 0) => {
     );
     const lineTwo = pickVariant(
         [
-            `Refined ${projectAlias} architecture decisions with ${coreSkills}, reducing response latency by ${performanceGain}% through traceable iteration and rigorous validation`,
-            `Optimized ${projectAlias} processing flows using ${coreSkills}, improving throughput by ${performanceGain}% through benchmarked refinement and proactive quality controls`,
-            `Strengthened ${projectAlias} execution paths with ${coreSkills}, lowering operational overhead by ${performanceGain}% with systematic analysis and precise remediation`,
+            `Refined ${projectAlias} architecture decisions, reducing response latency by ${performanceGain}% through traceable iteration and rigorous validation`,
+            `Optimized ${projectAlias} processing flows, improving throughput by ${performanceGain}% through benchmarked refinement and proactive quality controls`,
+            `Strengthened ${projectAlias} execution paths, lowering operational overhead by ${performanceGain}% with systematic analysis and precise remediation`,
         ],
         seed + 1,
     );
     const lineThree = pickVariant(
         [
-            `Elevated ${projectAlias} quality safeguards using ${coreSkills}, increasing defect-resolution efficiency by ${reliabilityGain}% with robust observability and risk governance`,
-            `Hardened ${projectAlias} release-readiness with ${coreSkills}, improving deployment reliability by ${reliabilityGain}% through controlled validation and continuity planning`,
-            `Enhanced ${projectAlias} verification coverage using ${coreSkills}, improving production resilience by ${reliabilityGain}% with auditable safeguards and operational discipline`,
+            `Elevated ${projectAlias} quality safeguards, increasing defect-resolution efficiency by ${reliabilityGain}% with robust observability and risk governance`,
+            `Hardened ${projectAlias} release-readiness, improving deployment reliability by ${reliabilityGain}% through controlled validation and continuity planning`,
+            `Enhanced ${projectAlias} verification coverage, improving production resilience by ${reliabilityGain}% with auditable safeguards and operational discipline`,
         ],
         seed + 2,
     );
@@ -338,6 +401,14 @@ const toBulletKey = (value = '') =>
         .replace(/\s+/g, ' ')
         .trim();
 
+const getBulletEndingKey = (value = '') => {
+    const tokens = toBulletKey(value).split(' ').filter(Boolean);
+    if (!tokens.length) {
+        return '';
+    }
+    return String(tokens[tokens.length - 1] || '').toLowerCase();
+};
+
 const isDummyBulletLine = (value = '') => {
     const line = cleanOneLine(value);
     if (!line) {
@@ -368,8 +439,12 @@ const buildPreviewUniqueLine = ({ section = 'experience', context = '', coreSkil
 };
 
 const enforceLivePreviewBulletQuality = (items = [], options = {}) => {
-    const { section = 'experience', contextFields = [] } = options || {};
-    const globalKeys = new Set();
+    const {
+        section = 'experience',
+        contextFields = [],
+        sharedLineKeys = new Set(),
+        sharedEndingKeys = new Set(),
+    } = options || {};
 
     return (Array.isArray(items) ? items : []).map((item = {}, itemIndex = 0) => {
         const descriptionLines = splitDescriptionLines(item.description);
@@ -377,20 +452,44 @@ const enforceLivePreviewBulletQuality = (items = [], options = {}) => {
             .map((field) => clean(item?.[field]))
             .filter(Boolean)
             .join(' ');
-        const coreSkills = pickCoreSkills([item?.techStack || '', item?.skills || ''], hashSeed(`${section}|skills|${itemIndex}`), 2, 3).join(', ');
+        const coreSkillTokens = pickCoreSkills([item?.techStack || '', item?.skills || ''], hashSeed(`${section}|skills|${itemIndex}`), 2, 3);
+        const coreSkills = coreSkillTokens.join(', ');
         const seed = hashSeed(`${section}|${context}|${itemIndex}`);
         const accepted = [];
         const localKeys = new Set();
 
         const tryPush = (line) => {
-            const normalized = enforceStrongBulletEnding(line, seed + accepted.length);
+            let candidate = cleanOneLine(line);
+            const targetIndex = accepted.length;
+
+            if (section === 'project') {
+                if (targetIndex === 0 && coreSkillTokens.length >= 2) {
+                    const mentioned = countMentionedSkills(candidate, coreSkillTokens);
+                    if (mentioned < 2) {
+                        candidate = `${candidate.replace(/[.!?]+$/g, '').trim()} using ${coreSkills}`;
+                    }
+                }
+                if (targetIndex > 0 && coreSkillTokens.length) {
+                    candidate = stripSkillsFromLine(candidate, coreSkillTokens);
+                }
+            }
+
+            const normalized = enforceStrongBulletEnding(candidate, seed + accepted.length, sharedEndingKeys);
             const key = toBulletKey(normalized);
-            if (!key || isDummyBulletLine(normalized) || localKeys.has(key) || globalKeys.has(key)) {
+            const endingKey = getBulletEndingKey(normalized);
+            if (
+                !key ||
+                !endingKey ||
+                isDummyBulletLine(normalized) ||
+                localKeys.has(key) ||
+                sharedLineKeys.has(key)
+            ) {
                 return false;
             }
             accepted.push(normalized);
             localKeys.add(key);
-            globalKeys.add(key);
+            sharedLineKeys.add(key);
+            sharedEndingKeys.add(endingKey);
             return true;
         };
 
@@ -632,17 +731,23 @@ const applyBulletCompression = (items = []) =>
 export const getTemplateData = (resumeData = {}) => {
     const workExperience = normalizeWorkExperience(resumeData.workExperience || []);
     const internships = normalizeInternships(resumeData.internships || [], resumeData.skills || []);
+    const sharedLineKeys = new Set();
+    const sharedEndingKeys = new Set();
     const visibleExperience = enforceLivePreviewBulletQuality(
         resolveVisibleExperience(workExperience, internships),
-        { section: 'experience', contextFields: ['role', 'company'] },
+        { section: 'experience', contextFields: ['role', 'company'], sharedLineKeys, sharedEndingKeys },
     );
     const projects = enforceLivePreviewBulletQuality(normalizeProjects(resumeData.projects || []), {
         section: 'project',
         contextFields: ['name'],
+        sharedLineKeys,
+        sharedEndingKeys,
     });
     const cleanedInternships = enforceLivePreviewBulletQuality(internships, {
         section: 'internship',
         contextFields: ['role', 'company'],
+        sharedLineKeys,
+        sharedEndingKeys,
     });
     return {
         personalDetails: normalizePersonalDetails(resumeData.personalDetails || {}, resumeData),
