@@ -5,7 +5,7 @@ const { pipeline } = require('stream/promises');
 
 const cloudinary = require('../config/cloudinary');
 const Resume = require('../models/Resume.model');
-const { extractTextFromPdfFile, generatePdfFromHtml } = require('../services/pdfGenerate.service');
+const { extractTextFromPdfFile, generatePdfFromHtml, generatePdfFromUrl } = require('../services/pdfGenerate.service');
 const { AppError, asyncHandler, sendSuccess } = require('../utils/response');
 
 const requireAuthenticatedUserId = (req) => {
@@ -216,13 +216,14 @@ const uploadResume = asyncHandler(async (req, res) => {
 
 const generateResumePdf = asyncHandler(async (req, res) => {
     const html = toText(req.body?.html);
+    const url = toText(req.body?.url);
     const fileName = sanitizeFilename(req.body?.fileName || 'resume.pdf');
 
-    if (!html) {
-        throw new AppError('HTML content is required.', 400);
+    if (!html && !url) {
+        throw new AppError('Either HTML content or URL is required.', 400);
     }
 
-    const { stream, contentLength, cleanup } = await generatePdfFromHtml(html);
+    const { stream, contentLength, cleanup } = url ? await generatePdfFromUrl(url) : await generatePdfFromHtml(html);
     setPdfHeaders(res, fileName, contentLength);
     res.status(200);
     try {
@@ -291,7 +292,15 @@ const generateHtmlFromResumeData = (resumeData = {}, templateName = 'template1')
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <style>
-      body { font-family: Arial, sans-serif; margin: 32px; color: #1e1e1e; line-height: 1.5; }
+      @page { size: A4; margin: 12mm; }
+      :root {
+        --print-page-height: 297mm;
+        --print-margin: 12mm;
+        --print-content-min-height: calc(var(--print-page-height) - (var(--print-margin) * 2));
+      }
+      html, body { margin: 0; padding: 0; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body { font-family: Arial, sans-serif; color: #1e1e1e; line-height: 1.5; }
+      #resume-ready { width: 100%; min-height: var(--print-content-min-height); margin: 0 auto; box-sizing: border-box; }
       h1, h2, h3, h4 { margin: 0; }
       h1 { font-size: 28px; margin-bottom: 6px; }
       h2 { font-size: 16px; margin-top: 18px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
@@ -300,23 +309,27 @@ const generateHtmlFromResumeData = (resumeData = {}, templateName = 'template1')
       .meta { color: #555; margin-bottom: 10px; }
       .block { margin-bottom: 10px; }
       .template { font-size: 11px; color: #777; margin-top: 20px; }
+      section { break-inside: auto; page-break-inside: auto; }
+      article, .block, li { break-inside: avoid; page-break-inside: avoid; }
     </style>
   </head>
   <body>
-    <h1>${fullName}</h1>
-    <h3>${title}</h3>
-    <p class="meta">${email}${email && phone ? ' | ' : ''}${phone}${(email || phone) && location ? ' | ' : ''}${location}</p>
-    <h2>Summary</h2>
-    <p>${summary}</p>
-    <h2>Skills</h2>
-    <ul>${renderListItems(resumeData.skills)}</ul>
-    <h2>Work Experience</h2>
-    ${renderExperienceBlocks(resumeData.workExperience)}
-    <h2>Projects</h2>
-    ${renderProjectBlocks(resumeData.projects)}
-    <h2>Education</h2>
-    ${renderEducationBlocks(resumeData.education)}
-    <p class="template">Template: ${escapeHtml(templateName || 'template1')}</p>
+    <div id="resume-ready">
+      <h1>${fullName}</h1>
+      <h3>${title}</h3>
+      <p class="meta">${email}${email && phone ? ' | ' : ''}${phone}${(email || phone) && location ? ' | ' : ''}${location}</p>
+      <h2>Summary</h2>
+      <p>${summary}</p>
+      <h2>Skills</h2>
+      <ul>${renderListItems(resumeData.skills)}</ul>
+      <h2>Work Experience</h2>
+      ${renderExperienceBlocks(resumeData.workExperience)}
+      <h2>Projects</h2>
+      ${renderProjectBlocks(resumeData.projects)}
+      <h2>Education</h2>
+      ${renderEducationBlocks(resumeData.education)}
+      <p class="template">Template: ${escapeHtml(templateName || 'template1')}</p>
+    </div>
   </body>
 </html>`;
 };
