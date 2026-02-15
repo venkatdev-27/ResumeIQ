@@ -294,6 +294,120 @@ const ensureThreeBullets = (value = []) => {
     return fixed.slice(0, 3);
 };
 
+const GLOBAL_BULLET_START_VERBS = [
+    'Engineered',
+    'Optimized',
+    'Implemented',
+    'Orchestrated',
+    'Streamlined',
+    'Architected',
+    'Automated',
+    'Strengthened',
+    'Elevated',
+    'Delivered',
+    'Validated',
+    'Enhanced',
+];
+
+const GLOBAL_BULLET_END_WORDS = [
+    'excellence',
+    'precision',
+    'reliability',
+    'scalability',
+    'efficiency',
+    'resilience',
+    'maintainability',
+    'consistency',
+    'stability',
+    'readiness',
+];
+
+const normalizeBulletUniquenessKey = (value = '') =>
+    normalizeSimpleText(String(value || '').replace(/[.!?]+$/g, '')).toLowerCase();
+
+const ensureBulletSentence = (value = '') => {
+    const line = normalizeSimpleText(value);
+    if (!line) {
+        return '';
+    }
+    return /[.!?]$/.test(line) ? line : `${line}.`;
+};
+
+const getBulletBoundaryKey = (value = '', side = 'first') => {
+    const words = normalizeSimpleText(String(value || '').replace(/[.!?]+$/g, ''))
+        .split(' ')
+        .map((token) => token.trim().toLowerCase().replace(/[^a-z0-9%-]/g, ''))
+        .filter(Boolean);
+    if (!words.length) {
+        return '';
+    }
+    return side === 'last' ? words[words.length - 1] : words[0];
+};
+
+const enforceGlobalUniqueBullets = ({ bullets = [], state, context = '' }) => {
+    const uniquenessState = state || {
+        lineKeys: new Set(),
+        startKeys: new Set(),
+        endKeys: new Set(),
+        cursor: 0,
+    };
+
+    return (Array.isArray(bullets) ? bullets : []).map((line, index) => {
+        let candidate = ensureBulletSentence(line);
+        let key = normalizeBulletUniquenessKey(candidate);
+        let startKey = getBulletBoundaryKey(candidate, 'first');
+        let endKey = getBulletBoundaryKey(candidate, 'last');
+        let attempts = 0;
+
+        while (
+            (!key ||
+                uniquenessState.lineKeys.has(key) ||
+                !startKey ||
+                !endKey ||
+                uniquenessState.startKeys.has(startKey) ||
+                uniquenessState.endKeys.has(endKey)) &&
+            attempts < 10
+        ) {
+            const plain = normalizeSimpleText(candidate.replace(/[.!?]+$/g, ''));
+            const words = plain.split(' ').filter(Boolean);
+            if (!words.length) {
+                break;
+            }
+
+            if (attempts % 2 === 0) {
+                const verb = GLOBAL_BULLET_START_VERBS[(uniquenessState.cursor + attempts + index) % GLOBAL_BULLET_START_VERBS.length];
+                words[0] = verb;
+            } else {
+                const ending = GLOBAL_BULLET_END_WORDS[(uniquenessState.cursor + attempts + index) % GLOBAL_BULLET_END_WORDS.length];
+                words[words.length - 1] = ending;
+            }
+
+            if (attempts >= 6 && context) {
+                words.push(context.toLowerCase());
+            }
+
+            candidate = ensureBulletSentence(words.join(' '));
+            key = normalizeBulletUniquenessKey(candidate);
+            startKey = getBulletBoundaryKey(candidate, 'first');
+            endKey = getBulletBoundaryKey(candidate, 'last');
+            attempts += 1;
+        }
+
+        if (key) {
+            uniquenessState.lineKeys.add(key);
+        }
+        if (startKey) {
+            uniquenessState.startKeys.add(startKey);
+        }
+        if (endKey) {
+            uniquenessState.endKeys.add(endKey);
+        }
+        uniquenessState.cursor += 1;
+
+        return candidate;
+    });
+};
+
 const sanitizeResumeDataForAI = (resumeData = {}) => {
     const safeResumeData = resumeData && typeof resumeData === 'object' ? resumeData : {};
     const personalDetails = safeResumeData.personalDetails || {};
@@ -352,10 +466,17 @@ const sanitizeResumeDataForAI = (resumeData = {}) => {
     };
 };
 
-const applySequentialDescriptionImprovements = ({ entries = [], improvedEntries = [], hasMeaningfulEntry }) => {
+const applySequentialDescriptionImprovements = ({
+    entries = [],
+    improvedEntries = [],
+    hasMeaningfulEntry,
+    uniquenessState,
+    sectionName = '',
+    getEntryContext = () => '',
+}) => {
     let improvedIndex = 0;
 
-    return entries.map((entry) => {
+    return entries.map((entry, entryIndex) => {
         if (!hasMeaningfulEntry(entry)) {
             return entry;
         }
@@ -366,20 +487,31 @@ const applySequentialDescriptionImprovements = ({ entries = [], improvedEntries 
         const bullets = normalizeBullets(aiEntry.bullets);
         const fallbackBullets = textToBullets(aiEntry.improvedDescription || aiEntry.description || '');
         const finalBullets = ensureThreeBullets(bullets.length ? bullets : fallbackBullets);
+        const globallyUniqueBullets = enforceGlobalUniqueBullets({
+            bullets: finalBullets,
+            state: uniquenessState,
+            context: normalizeSimpleText(`${sectionName} ${getEntryContext(entry, entryIndex)}`),
+        });
 
-        if (!finalBullets.length) {
+        if (!globallyUniqueBullets.length) {
             return entry;
         }
 
         return {
             ...entry,
-            description: multilineFromBullets(finalBullets),
+            description: multilineFromBullets(globallyUniqueBullets),
         };
     });
 };
 
 const applyAiImprovementsToResume = (resumeData, improved) => {
     const next = mergeResumeData(resumeData);
+    const uniquenessState = {
+        lineKeys: new Set(),
+        startKeys: new Set(),
+        endKeys: new Set(),
+        cursor: 0,
+    };
 
     if (improved?.summary) {
         next.personalDetails.summary = normalizeSummaryToFourLines(improved.summary);
@@ -390,6 +522,9 @@ const applyAiImprovementsToResume = (resumeData, improved) => {
             entries: next.workExperience,
             improvedEntries: improved.workExperience,
             hasMeaningfulEntry: hasMeaningfulWorkEntry,
+            uniquenessState,
+            sectionName: 'experience',
+            getEntryContext: (entry = {}) => `${entry.role || ''} ${entry.company || ''}`.trim(),
         });
     }
 
@@ -398,6 +533,9 @@ const applyAiImprovementsToResume = (resumeData, improved) => {
             entries: next.projects,
             improvedEntries: improved.projects,
             hasMeaningfulEntry: hasMeaningfulProjectEntry,
+            uniquenessState,
+            sectionName: 'project',
+            getEntryContext: (entry = {}) => `${entry.name || ''}`.trim(),
         });
     }
 
@@ -406,6 +544,9 @@ const applyAiImprovementsToResume = (resumeData, improved) => {
             entries: next.internships,
             improvedEntries: improved.internships,
             hasMeaningfulEntry: hasMeaningfulInternshipEntry,
+            uniquenessState,
+            sectionName: 'internship',
+            getEntryContext: (entry = {}) => `${entry.role || ''} ${entry.company || ''}`.trim(),
         });
     }
 
