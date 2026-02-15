@@ -149,7 +149,7 @@ function ResumeBuilder() {
     return (
         <div className="resume-builder-page min-h-screen overflow-x-hidden bg-[#f5f5f7] text-[#111827]">
             <Navbar />
-            <main className="mx-auto max-w-3xl space-y-5 overflow-x-hidden px-4 pb-28 pt-2 max-[350px]:px-2.5 sm:px-6 sm:pb-12 sm:pt-3">
+            <main className="mx-auto max-w-3xl space-y-5 overflow-x-hidden px-4 pb-28 pt-2 max-[350px]:px-2.5 sm:px-6 sm:pb-28 sm:pt-3">
                 <section className="min-w-0 overflow-x-hidden">
                     <ResumeForm
                         resumeData={resumeData}
