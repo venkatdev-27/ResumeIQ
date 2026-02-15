@@ -76,8 +76,8 @@ const aiImproveSchema = Joi.object({
 });
 
 const generatePdfSchema = Joi.object({
-    html: Joi.string().trim().min(20).optional(),
-    url: Joi.string().trim().uri({ scheme: ['http', 'https'] }).optional(),
+    html: Joi.string().trim().min(20).empty('').optional(),
+    url: Joi.string().trim().uri({ scheme: ['http', 'https'] }).empty('').optional(),
     fileName: Joi.string().trim().allow('').optional(),
 }).or('html', 'url');
 
