@@ -19,6 +19,9 @@ function FormStepper({
     const isLastStep = currentStep === steps.length - 1;
     const currentLabel = steps[currentStep]?.label || '';
     const nextLabel = !isLastStep ? steps[currentStep + 1]?.label || 'Next Step' : '';
+    const actionBarClass = isLastStep
+        ? 'fixed inset-x-0 bottom-0 z-30 border-t border-[#dce1e8] bg-[#f5f5f7]/95 px-4 pb-4 pt-3 backdrop-blur-sm'
+        : 'fixed inset-x-0 bottom-0 z-30 border-t border-[#dce1e8] bg-[#f5f5f7]/95 px-4 pb-4 pt-3 backdrop-blur-sm sm:static sm:mt-4 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none';
 
     const topNavButtonClass =
         'h-10 w-10 rounded-full border-0 bg-transparent px-0 text-[#111827] shadow-none hover:bg-[#dfe3ea] disabled:cursor-not-allowed disabled:opacity-35';
@@ -70,7 +73,7 @@ function FormStepper({
                 </div>
             </div>
 
-            <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[#dce1e8] bg-[#f5f5f7]/95 px-4 pb-4 pt-3 backdrop-blur-sm sm:static sm:mt-4 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+            <div className={actionBarClass}>
                 <div className="mx-auto w-full max-w-3xl">
                     {!isLastStep ? (
                         <Button
