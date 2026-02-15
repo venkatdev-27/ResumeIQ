@@ -76,9 +76,10 @@ const aiImproveSchema = Joi.object({
 });
 
 const generatePdfSchema = Joi.object({
-    html: Joi.string().trim().min(20).required(),
+    html: Joi.string().trim().min(20).optional(),
+    url: Joi.string().trim().uri({ scheme: ['http', 'https'] }).optional(),
     fileName: Joi.string().trim().allow('').optional(),
-});
+}).or('html', 'url');
 
 const validateBody = (schema) => (req, _res, next) => {
     const { error, value } = schema.validate(req.body, {
