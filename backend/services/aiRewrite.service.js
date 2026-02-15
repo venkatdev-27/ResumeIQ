@@ -1577,10 +1577,12 @@ const expandDescriptionLines = (lines = []) =>
     );
 
 const normalizeBulletItem = (value = '') =>
-    String(value || '')
-        .replace(/^[\u2022*-]+\s*/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+    ensureSentenceEnding(
+        String(value || '')
+            .replace(/^[\u2022*-]+\s*/g, '')
+            .replace(/\s+/g, ' ')
+            .trim(),
+    );
 
 const normalizeBulletLineKey = (value = '') =>
     compactToOneLine(value)
@@ -1594,7 +1596,9 @@ const escapePattern = (value = '') => String(value || '').replace(/[.*+?^${}()|[
 
 const enforceSingleProjectTitleMention = (bullets = [], title = '') => {
     const safeTitle = compactToOneLine(title);
-    const safeBullets = Array.isArray(bullets) ? bullets.map((line) => compactToOneLine(line)).filter(Boolean) : [];
+    const safeBullets = Array.isArray(bullets)
+        ? bullets.map((line) => ensureSentenceEnding(compactToOneLine(line))).filter(Boolean)
+        : [];
     if (!safeTitle || !safeBullets.length) {
         return safeBullets;
     }
@@ -1610,12 +1614,12 @@ const enforceSingleProjectTitleMention = (bullets = [], title = '') => {
         const hasTitle = titleRegex.test(line);
         titleRegex.lastIndex = 0;
         if (!hasTitle) {
-            return line;
+            return ensureSentenceEnding(line);
         }
 
         if (!mentionUsed) {
             mentionUsed = true;
-            return line;
+            return ensureSentenceEnding(line);
         }
 
         const replaced = line
@@ -1625,11 +1629,11 @@ const enforceSingleProjectTitleMention = (bullets = [], title = '') => {
             .trim();
 
         if (replaced) {
-            return replaced;
+            return ensureSentenceEnding(replaced);
         }
 
         if (index === 0) {
-            return line;
+            return ensureSentenceEnding(line);
         }
 
         return ensureSentenceEnding('Improved platform reliability through measurable validation and operational excellence');
@@ -1637,7 +1641,9 @@ const enforceSingleProjectTitleMention = (bullets = [], title = '') => {
 };
 
 const enforceProjectCoreSkillsSingleLine = (bullets = [], coreSkills = []) => {
-    const safeBullets = Array.isArray(bullets) ? bullets.map((line) => compactToOneLine(line)).filter(Boolean) : [];
+    const safeBullets = Array.isArray(bullets)
+        ? bullets.map((line) => ensureSentenceEnding(compactToOneLine(line))).filter(Boolean)
+        : [];
     const safeSkills = normalizeSkills(coreSkills).slice(0, 3);
     if (!safeBullets.length || safeSkills.length < 2) {
         return safeBullets;
@@ -1665,7 +1671,7 @@ const enforceProjectCoreSkillsSingleLine = (bullets = [], coreSkills = []) => {
     });
 
     if (mentionsCount <= 1) {
-        return withPrimary;
+        return withPrimary.map((line) => ensureSentenceEnding(line));
     }
 
     return withPrimary.map((line, index) => {
@@ -1776,7 +1782,7 @@ const enforceGlobalBulletUniqueness = ({
         });
 
     const pushIfUnique = (candidate = '', attemptSeed = 0) => {
-        let line = String(candidate || '').trim();
+        let line = ensureSentenceEnding(String(candidate || '').trim());
         let key = normalizeBulletLineKey(line);
         let startKey = getBulletBoundaryWordKey(line, 'first');
         let endKey = getBulletBoundaryWordKey(line, 'last');
@@ -1823,7 +1829,7 @@ const enforceGlobalBulletUniqueness = ({
         sharedLineKeys.add(key);
         sharedStartWordKeys.add(startKey);
         sharedEndWordKeys.add(endKey);
-        result.push(line);
+        result.push(ensureSentenceEnding(line));
         return true;
     };
 
