@@ -81,6 +81,45 @@ const pickVariant = (variants = [], seed = 0) => {
     return pool[Math.abs(Number(seed) || 0) % pool.length];
 };
 
+const parseSkillTokens = (value = '') =>
+    String(value || '')
+        .replace(/\r\n/g, ' ')
+        .replace(/\r/g, ' ')
+        .replace(/\n/g, ' ')
+        .split(/[,\s|;/]+/)
+        .map((token) => cleanOneLine(token).replace(/[^a-zA-Z0-9+#.-]/g, ''))
+        .filter(Boolean);
+
+const pickCoreSkills = (sources = [], seed = 0, min = 2, max = 3) => {
+    const seen = new Set();
+    const merged = (Array.isArray(sources) ? sources : [])
+        .flatMap((source) => parseSkillTokens(source))
+        .filter((token) => {
+            const key = token.toLowerCase();
+            if (!key || seen.has(key)) {
+                return false;
+            }
+            seen.add(key);
+            return true;
+        });
+
+    if (!merged.length) {
+        return ['core', 'engineering'];
+    }
+
+    const target = Math.min(max, Math.max(min, merged.length >= min ? min + (Math.abs(seed) % 2) : min));
+    const selected = [];
+    let cursor = Math.abs(seed) % merged.length;
+    while (selected.length < target && selected.length < merged.length) {
+        const candidate = merged[cursor % merged.length];
+        if (!selected.some((item) => item.toLowerCase() === String(candidate || '').toLowerCase())) {
+            selected.push(candidate);
+        }
+        cursor += 1;
+    }
+    return selected.slice(0, max);
+};
+
 const pickStrongBulletEnding = (seedValue = 0) =>
     BULLET_STRONG_ENDINGS[Math.abs(Number(seedValue) || 0) % BULLET_STRONG_ENDINGS.length];
 
@@ -187,29 +226,30 @@ const buildProjectFallbackDescription = (item = {}, itemIndex = 0) => {
     const name = clean(item.name) || 'Project';
     const seed = hashSeed(`${name}|project|${itemIndex}`);
     const projectAlias = pickVariant(['the platform', 'the solution', 'the application'], seed + 21);
+    const coreSkills = pickCoreSkills([item.techStack], seed, 2, 3).join(', ');
     const performanceGain = 12 + (seed % 19);
     const reliabilityGain = 8 + ((seed + 7) % 21);
     const leadLine = pickVariant(
         [
-            `Architected ${name} delivery workflows, increasing release velocity by ${performanceGain}% through disciplined orchestration and accountable execution`,
-            `Engineered ${name} solution pathways, raising delivery throughput by ${performanceGain}% through measured optimization and dependable coordination`,
-            `Implemented ${name} capability streams, improving execution efficiency by ${performanceGain}% through structured planning and resilient governance`,
+            `Architected ${name} delivery workflows using ${coreSkills}, increasing release velocity by ${performanceGain}% through disciplined orchestration and accountable execution`,
+            `Engineered ${name} solution pathways using ${coreSkills}, raising delivery throughput by ${performanceGain}% through measured optimization and dependable coordination`,
+            `Implemented ${name} capability streams using ${coreSkills}, improving execution efficiency by ${performanceGain}% through structured planning and resilient governance`,
         ],
         seed + 31,
     );
     const lineTwo = pickVariant(
         [
-            `Refined ${projectAlias} architecture decisions, reducing response latency by ${performanceGain}% through traceable iteration and rigorous validation`,
-            `Optimized ${projectAlias} processing flows, improving throughput by ${performanceGain}% through benchmarked refinement and proactive quality controls`,
-            `Strengthened ${projectAlias} execution paths, lowering operational overhead by ${performanceGain}% with systematic analysis and precise remediation`,
+            `Refined ${projectAlias} architecture decisions with ${coreSkills}, reducing response latency by ${performanceGain}% through traceable iteration and rigorous validation`,
+            `Optimized ${projectAlias} processing flows using ${coreSkills}, improving throughput by ${performanceGain}% through benchmarked refinement and proactive quality controls`,
+            `Strengthened ${projectAlias} execution paths with ${coreSkills}, lowering operational overhead by ${performanceGain}% with systematic analysis and precise remediation`,
         ],
         seed + 1,
     );
     const lineThree = pickVariant(
         [
-            `Elevated ${projectAlias} quality safeguards, increasing defect-resolution efficiency by ${reliabilityGain}% with robust observability and risk governance`,
-            `Hardened ${projectAlias} release-readiness, improving deployment reliability by ${reliabilityGain}% through controlled validation and continuity planning`,
-            `Enhanced ${projectAlias} verification coverage, improving production resilience by ${reliabilityGain}% with auditable safeguards and operational discipline`,
+            `Elevated ${projectAlias} quality safeguards using ${coreSkills}, increasing defect-resolution efficiency by ${reliabilityGain}% with robust observability and risk governance`,
+            `Hardened ${projectAlias} release-readiness with ${coreSkills}, improving deployment reliability by ${reliabilityGain}% through controlled validation and continuity planning`,
+            `Enhanced ${projectAlias} verification coverage using ${coreSkills}, improving production resilience by ${reliabilityGain}% with auditable safeguards and operational discipline`,
         ],
         seed + 2,
     );
@@ -221,30 +261,31 @@ const buildProjectFallbackDescription = (item = {}, itemIndex = 0) => {
     ].join('\n');
 };
 
-const buildInternshipFallbackDescription = (item = {}, itemIndex = 0) => {
+const buildInternshipFallbackDescription = (item = {}, itemIndex = 0, sharedSkills = []) => {
     const role = clean(item.role) || 'Intern';
     const company = clean(item.company) || 'organization';
+    const coreSkills = pickCoreSkills(sharedSkills, hashSeed(`${role}|${company}|skills|${itemIndex}`), 2, 3).join(', ');
     const seed = hashSeed(`${role}|${company}|internship|${itemIndex}`);
     const deliveryGain = 9 + (seed % 16);
     const lineTwo = pickVariant(
         [
-            `Supported ${company} initiatives by translating requirements into implementation-ready tasks with traceability`,
-            `Contributed to ${company} deliverables through structured analysis, tooling support, and disciplined validation`,
-            `Assisted ${company} teams with execution updates, quality checkpoints, and documentation continuity`,
+            `Supported ${company} initiatives using ${coreSkills}, translating requirements into implementation-ready tasks with traceability and measurable execution control`,
+            `Contributed to ${company} deliverables with ${coreSkills}, applying structured analysis, tooling support, and disciplined validation routines`,
+            `Assisted ${company} teams using ${coreSkills}, driving execution updates, quality checkpoints, and documentation continuity with accountability`,
         ],
         seed + 1,
     );
     const lineThree = pickVariant(
         [
-            `Improved task completion velocity by ${deliveryGain}% through defect triage and verification discipline`,
-            `Increased execution consistency by ${deliveryGain}% using documented updates and milestone accountability`,
-            `Raised delivery quality by ${deliveryGain}% with proactive escalation and closure validation`,
+            `Improved task completion velocity by ${deliveryGain}% with ${coreSkills}, maintaining application quality through defect triage and verification discipline`,
+            `Increased execution consistency by ${deliveryGain}% using ${coreSkills}, maintaining application stability with documented updates and milestone accountability`,
+            `Raised delivery quality by ${deliveryGain}% through ${coreSkills}, maintaining application reliability with proactive escalation and closure validation`,
         ],
         seed + 2,
     );
 
     return [
-        sentence(`Executed ${role} tasks at ${company} with accountable ownership and delivery consistency`),
+        sentence(`Executed ${role} tasks at ${company} using ${coreSkills} with accountable ownership and delivery consistency`),
         enforceStrongBulletEnding(lineTwo, seed + 3),
         enforceStrongBulletEnding(lineThree, seed + 4),
     ].join('\n');
@@ -311,14 +352,15 @@ const splitDescriptionLines = (value = '') =>
         .map((line) => cleanOneLine(line).replace(/^[\u2022*-]\s*/g, '').trim())
         .filter(Boolean);
 
-const buildPreviewUniqueLine = ({ section = 'experience', context = '', seed = 0, lineIndex = 0 }) => {
+const buildPreviewUniqueLine = ({ section = 'experience', context = '', coreSkills = '', seed = 0, lineIndex = 0 }) => {
     const contextLabel = cleanOneLine(context) || section;
+    const skillFragment = cleanOneLine(coreSkills) ? ` using ${cleanOneLine(coreSkills)}` : '';
     const metric = 9 + ((Math.abs(seed) + lineIndex * 3) % 22);
     const line = pickVariant(
         [
-            `Engineered ${contextLabel} execution flow, improving delivery reliability by ${metric}% through disciplined validation and governance`,
-            `Optimized ${contextLabel} implementation lifecycle, reducing avoidable rework by ${metric}% with measurable controls and traceability`,
-            `Strengthened ${contextLabel} release quality, improving outcome consistency by ${metric}% through structured checkpoints and accountability`,
+            `Engineered ${contextLabel} execution flow${skillFragment}, improving delivery reliability by ${metric}% through disciplined validation and governance`,
+            `Optimized ${contextLabel} implementation lifecycle${skillFragment}, reducing avoidable rework by ${metric}% with measurable controls and traceability`,
+            `Strengthened ${contextLabel} release quality${skillFragment}, improving outcome consistency by ${metric}% through structured checkpoints and accountability`,
         ],
         seed + lineIndex,
     );
@@ -335,6 +377,7 @@ const enforceLivePreviewBulletQuality = (items = [], options = {}) => {
             .map((field) => clean(item?.[field]))
             .filter(Boolean)
             .join(' ');
+        const coreSkills = pickCoreSkills([item?.techStack || '', item?.skills || ''], hashSeed(`${section}|skills|${itemIndex}`), 2, 3).join(', ');
         const seed = hashSeed(`${section}|${context}|${itemIndex}`);
         const accepted = [];
         const localKeys = new Set();
@@ -360,6 +403,7 @@ const enforceLivePreviewBulletQuality = (items = [], options = {}) => {
             const generated = buildPreviewUniqueLine({
                 section,
                 context: context || section,
+                coreSkills: section === 'project' || section === 'internship' ? coreSkills : '',
                 seed: seed + cursor,
                 lineIndex: accepted.length,
             });
@@ -539,14 +583,15 @@ const normalizeProjects = (value = []) =>
         }))
         .filter((item) => hasAnyValue(item, ['name', 'techStack', 'link', 'description']));
 
-const normalizeInternships = (value = []) =>
+const normalizeInternships = (value = [], sharedSkills = []) =>
     (Array.isArray(value) ? value : [])
         .map((item = {}, index) => ({
             company: clean(item.company),
             role: clean(item.role),
             startDate: clean(item.startDate),
             endDate: clean(item.endDate),
-            description: normalizeMultiline(item.description) || buildInternshipFallbackDescription(item, index),
+            skills: (Array.isArray(sharedSkills) ? sharedSkills : []).slice(0, 3).join(', '),
+            description: normalizeMultiline(item.description) || buildInternshipFallbackDescription(item, index, sharedSkills),
             bulletMaxLines: 3,
         }))
         .filter((item) => hasAnyValue(item, ['company', 'role', 'startDate', 'endDate', 'description']));
@@ -586,7 +631,7 @@ const applyBulletCompression = (items = []) =>
 
 export const getTemplateData = (resumeData = {}) => {
     const workExperience = normalizeWorkExperience(resumeData.workExperience || []);
-    const internships = normalizeInternships(resumeData.internships || []);
+    const internships = normalizeInternships(resumeData.internships || [], resumeData.skills || []);
     const visibleExperience = enforceLivePreviewBulletQuality(
         resolveVisibleExperience(workExperience, internships),
         { section: 'experience', contextFields: ['role', 'company'] },

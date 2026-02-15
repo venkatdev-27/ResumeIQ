@@ -914,6 +914,7 @@ const enforceBulletWordCount = (line = '', options = {}) => {
         usedWordKeys = new Set(),
         minWords = TARGET_BULLET_MIN_WORDS,
         maxWords = TARGET_BULLET_MAX_WORDS,
+        requiredSkills = [],
     } = ensureObject(options);
     const safeMinWords = Math.max(8, Number(minWords) || TARGET_BULLET_MIN_WORDS);
     const safeMaxWords = Math.max(safeMinWords, Number(maxWords) || TARGET_BULLET_MAX_WORDS);
@@ -947,6 +948,7 @@ const enforceBulletWordCount = (line = '', options = {}) => {
         return sourceKey.includes(key) || sourceKey.includes(token.toLowerCase());
     });
     const connectorTokens = BULLET_CONNECTOR_TOKENS.filter((token) => !isLowValueBulletToken(token));
+    const normalizedRequiredSkills = normalizeSkills(requiredSkills).slice(0, 3);
 
     const result = [];
     const lineWordKeys = new Set();
@@ -966,6 +968,19 @@ const enforceBulletWordCount = (line = '', options = {}) => {
         avoidUsedWords: false,
     });
     contentWordCount += 1;
+
+    normalizedRequiredSkills.forEach((skill) => {
+        const appended = pushUniqueBulletToken({
+            token: skill,
+            result,
+            lineWordKeys,
+            usedWordKeys,
+            avoidUsedWords: false,
+        });
+        if (appended) {
+            contentWordCount += 1;
+        }
+    });
 
     const addPoolTokens = (pool = [], avoidUsedWords = true) => {
         for (const token of Array.isArray(pool) ? pool : []) {
@@ -1621,6 +1636,56 @@ const enforceSingleProjectTitleMention = (bullets = [], title = '') => {
     });
 };
 
+const enforceProjectCoreSkillsSingleLine = (bullets = [], coreSkills = []) => {
+    const safeBullets = Array.isArray(bullets) ? bullets.map((line) => compactToOneLine(line)).filter(Boolean) : [];
+    const safeSkills = normalizeSkills(coreSkills).slice(0, 3);
+    if (!safeBullets.length || safeSkills.length < 2) {
+        return safeBullets;
+    }
+
+    const skillsRegex = new RegExp(`\\b(${safeSkills.map((skill) => escapePattern(skill)).join('|')})\\b`, 'ig');
+    const mentionsCount = safeBullets.reduce((count, line) => {
+        skillsRegex.lastIndex = 0;
+        return count + ((line.match(skillsRegex) || []).length > 0 ? 1 : 0);
+    }, 0);
+
+    const preferredIndex = 0;
+    const withPrimary = safeBullets.map((line, index) => {
+        if (index !== preferredIndex) {
+            return line;
+        }
+
+        skillsRegex.lastIndex = 0;
+        if (skillsRegex.test(line)) {
+            return line;
+        }
+
+        const base = line.replace(/[.!?]+$/g, '').trim();
+        return ensureSentenceEnding(`${base} using ${safeSkills.join(', ')}`);
+    });
+
+    if (mentionsCount <= 1) {
+        return withPrimary;
+    }
+
+    return withPrimary.map((line, index) => {
+        if (index === preferredIndex) {
+            return line;
+        }
+        let cleaned = line;
+        safeSkills.forEach((skill) => {
+            const tokenRegex = new RegExp(`\\b${escapePattern(skill)}\\b`, 'ig');
+            cleaned = cleaned.replace(tokenRegex, '');
+        });
+        cleaned = cleaned
+            .replace(/\s+([,.;:!?])/g, '$1')
+            .replace(/\s{2,}/g, ' ')
+            .replace(/\b(using|with)\s*(,)?\s*$/i, '')
+            .trim();
+        return ensureSentenceEnding(cleaned || line);
+    });
+};
+
 const getBulletBoundaryWordKey = (value = '', position = 'first') => {
     const tokens = tokenizeWords(value).map((token) => toWordKey(token)).filter(Boolean);
     if (!tokens.length) {
@@ -1635,6 +1700,7 @@ const buildUniqueBulletLines = ({
     sourceText = '',
     minWords = TARGET_BULLET_MIN_WORDS,
     maxWords = TARGET_BULLET_MAX_WORDS,
+    requiredSkills = [],
 }) => {
     const usedWordKeys = new Set();
     const usedLineKeys = new Set();
@@ -1650,6 +1716,7 @@ const buildUniqueBulletLines = ({
             usedWordKeys,
             minWords,
             maxWords,
+            requiredSkills,
         });
 
         let candidateKey = normalizeBulletLineKey(candidate);
@@ -1662,6 +1729,7 @@ const buildUniqueBulletLines = ({
                 usedWordKeys,
                 minWords,
                 maxWords,
+                requiredSkills,
             });
             candidateKey = normalizeBulletLineKey(candidate);
             retryCount += 1;
@@ -1688,6 +1756,7 @@ const enforceGlobalBulletUniqueness = ({
     sharedEndWordKeys = new Set(),
     minWords = TARGET_BULLET_MIN_WORDS,
     maxWords = TARGET_BULLET_MAX_WORDS,
+    requiredSkills = [],
 }) => {
     const result = [];
     const localKeys = new Set();
@@ -1703,6 +1772,7 @@ const enforceGlobalBulletUniqueness = ({
             usedWordKeys: sharedWordKeys,
             minWords,
             maxWords,
+            requiredSkills,
         });
 
     const pushIfUnique = (candidate = '', attemptSeed = 0) => {
@@ -1809,6 +1879,7 @@ const normalizeBulletList = ({
     allowSyntheticFallback = false,
     minWords = TARGET_BULLET_MIN_WORDS,
     maxWords = TARGET_BULLET_MAX_WORDS,
+    requiredSkills = [],
 }) => {
     const fromArray = ensureArrayOfStrings(bullets).map((item) => normalizeBulletItem(item)).filter(Boolean);
     const fromText = toCandidateDescriptionLines(text);
@@ -1847,6 +1918,7 @@ const normalizeBulletList = ({
         sourceText: normalizedSourceText,
         minWords,
         maxWords,
+        requiredSkills,
     });
 };
 
@@ -1854,6 +1926,28 @@ const buildSkillsContextText = (skills = [], max = 3) =>
     normalizeSkills(skills)
         .slice(0, max)
         .join(' ');
+
+const pickCoreSkills = (...sources) =>
+    normalizeSkills(...sources)
+        .slice(0, 3);
+
+const pickProjectCoreSkills = ({
+    techStack = '',
+    description = '',
+    fallbackSkills = [],
+}) => {
+    const fromTechStack = normalizeSkills(techStack).slice(0, 3);
+    if (fromTechStack.length >= 2) {
+        return fromTechStack;
+    }
+
+    const fromProjectContext = normalizeSkills(techStack, description).slice(0, 3);
+    if (fromProjectContext.length >= 2) {
+        return fromProjectContext;
+    }
+
+    return normalizeSkills(techStack, description, fallbackSkills).slice(0, 3);
+};
 
 const buildSectionContextLabel = ({ profession = '', sectionLabel = '', primaryLabel = '', secondaryLabel = '', tertiaryLabel = '' }) =>
     [profession, sectionLabel, primaryLabel, secondaryLabel, tertiaryLabel]
@@ -1935,7 +2029,9 @@ const normalizeProjectsSection = ({
     sourceItems,
     profession = '',
     skillsContext = '',
+    resumeSkills = [],
     includeSkillContext = true,
+    requireCoreSkillsPerBullet = false,
     sharedLineKeys = new Set(),
     sharedWordKeys = new Set(),
     sharedStartWordKeys = new Set(),
@@ -1952,9 +2048,15 @@ const normalizeProjectsSection = ({
         .map((sourceItem, index) => {
             const safePayload = ensureObject(safePayloadItems[index]);
             const title = String(safePayload.title || safePayload.name || sourceItem.name || '').trim();
+            const coreSkills = pickProjectCoreSkills({
+                techStack: sourceItem.techStack,
+                description: safePayload.improvedDescription || safePayload.description || sourceItem.description || '',
+                fallbackSkills: resumeSkills,
+            });
 
             return {
                 title,
+                coreSkills,
                 bullets: enforceGlobalBulletUniqueness({
                     bullets: normalizeBulletList({
                     bullets: safePayload.bullets,
@@ -1963,6 +2065,7 @@ const normalizeProjectsSection = ({
                     allowSyntheticFallback,
                     minWords: TARGET_BULLET_MIN_WORDS,
                     maxWords: TARGET_BULLET_MAX_WORDS,
+                    requiredSkills: [],
                     contextLabel: buildSectionContextLabel({
                         profession: effectiveProfession,
                         sectionLabel: 'project',
@@ -1985,13 +2088,22 @@ const normalizeProjectsSection = ({
                     sharedEndWordKeys,
                     minWords: TARGET_BULLET_MIN_WORDS,
                     maxWords: TARGET_BULLET_MAX_WORDS,
+                    requiredSkills: [],
                 }),
             };
         })
         .map((item) => ({
             ...item,
-            bullets: enforceSingleProjectTitleMention(item.bullets, item.title),
+            bullets: enforceProjectCoreSkillsSingleLine(
+                enforceSingleProjectTitleMention(item.bullets, item.title),
+                requireCoreSkillsPerBullet ? item.coreSkills : [],
+            ),
         }))
+        .map((item) => {
+            const cloned = { ...item };
+            delete cloned.coreSkills;
+            return cloned;
+        })
         .filter((item) => hasAnyText(item.title, ...item.bullets));
 };
 
@@ -2000,6 +2112,7 @@ const normalizeInternshipsSection = ({
     sourceItems,
     profession = '',
     skillsContext = '',
+    resumeSkills = [],
     sharedLineKeys = new Set(),
     sharedWordKeys = new Set(),
     sharedStartWordKeys = new Set(),
@@ -2015,6 +2128,11 @@ const normalizeInternshipsSection = ({
         .slice(0, 30)
         .map((sourceItem, index) => {
             const safePayload = ensureObject(safePayloadItems[index]);
+            const coreSkills = pickCoreSkills(
+                safePayload.improvedDescription || safePayload.description || '',
+                sourceItem.description || '',
+                resumeSkills,
+            ).slice(0, 3);
 
             return {
                 company: String(safePayload.company || sourceItem.company || '').trim(),
@@ -2027,6 +2145,7 @@ const normalizeInternshipsSection = ({
                     allowSyntheticFallback,
                     minWords: TARGET_INTERNSHIP_BULLET_MIN_WORDS,
                     maxWords: TARGET_INTERNSHIP_BULLET_MAX_WORDS,
+                    requiredSkills: coreSkills,
                     contextLabel: buildSectionContextLabel({
                         profession: effectiveProfession,
                         sectionLabel: 'internship',
@@ -2049,6 +2168,7 @@ const normalizeInternshipsSection = ({
                     sharedEndWordKeys,
                     minWords: TARGET_INTERNSHIP_BULLET_MIN_WORDS,
                     maxWords: TARGET_INTERNSHIP_BULLET_MAX_WORDS,
+                    requiredSkills: coreSkills,
                 }),
             };
         })
@@ -2347,6 +2467,8 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
             sourceItems: resumeData.projects,
             profession,
             skillsContext,
+            resumeSkills: resumeData?.skills,
+            requireCoreSkillsPerBullet: false,
             sharedLineKeys,
             sharedWordKeys,
             sharedStartWordKeys,
@@ -2358,6 +2480,7 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
             sourceItems: resumeData.internships,
             profession,
             skillsContext,
+            resumeSkills: resumeData?.skills,
             sharedLineKeys,
             sharedWordKeys,
             sharedStartWordKeys,
@@ -2546,7 +2669,9 @@ const buildSummaryPreviewResponse = (summary = '', resumeData = {}) => {
             sourceItems: resumeData?.projects,
             profession,
             skillsContext,
+            resumeSkills: resumeData?.skills,
             includeSkillContext: false,
+            requireCoreSkillsPerBullet: true,
             sharedLineKeys,
             sharedWordKeys,
             sharedStartWordKeys,
@@ -2558,6 +2683,7 @@ const buildSummaryPreviewResponse = (summary = '', resumeData = {}) => {
             sourceItems: resumeData?.internships,
             profession,
             skillsContext,
+            resumeSkills: resumeData?.skills,
             sharedLineKeys,
             sharedWordKeys,
             sharedStartWordKeys,
@@ -2693,6 +2819,8 @@ BULLET RULES (STRICT):
 12. For each project, mention the project title in only one bullet line out of three.
 13. Do not repeat any full bullet line across projects, work experience, or internships, including live preview output.
 14. Never use dummy, template-like, placeholder, or repetitive bullet phrases.
+15. For each project, mention exactly 2 or 3 core skills derived primarily from that project's tech stack in one bullet line only, not all three lines.
+16. Internship bullets must also reflect practical use of 2 or 3 core skills where source context allows.
 
 SKILLS RULES:
 1. Keep only relevant technical skills missing or weak in the current resume.
@@ -2782,6 +2910,8 @@ Scope:
 12. Project bullets should use 15 to 17 words.
 13. Do not repeat any full bullet line across projects, work experience, or internships.
 14. Never use dummy, placeholder, or repetitive template phrasing.
+15. For each project, mention exactly 2 or 3 core skills derived primarily from that project's tech stack in one bullet line only, not all three lines.
+16. Internship bullets should also reference 2 or 3 core skills where source context allows.
 
 Input:
 resumeData: ${resumeDataPreview}
@@ -2956,6 +3086,7 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
                     allowSyntheticFallback: false,
                     minWords: TARGET_BULLET_MIN_WORDS,
                     maxWords: TARGET_BULLET_MAX_WORDS,
+                    requiredSkills: [],
                     contextLabel: buildSectionContextLabel({
                         profession,
                         sectionLabel: 'project',
@@ -2978,6 +3109,7 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
                 sharedEndWordKeys,
                 minWords: TARGET_BULLET_MIN_WORDS,
                 maxWords: TARGET_BULLET_MAX_WORDS,
+                requiredSkills: [],
             }), String(item?.name || item?.title || '').trim()),
         })),
         internships: (Array.isArray(resumeData.internships) ? resumeData.internships : []).map((item) => ({
@@ -2990,6 +3122,7 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
                     allowSyntheticFallback: false,
                     minWords: TARGET_INTERNSHIP_BULLET_MIN_WORDS,
                     maxWords: TARGET_INTERNSHIP_BULLET_MAX_WORDS,
+                    requiredSkills: pickCoreSkills(item?.description || '', resumeData?.skills || []),
                     contextLabel: buildSectionContextLabel({
                         profession,
                         sectionLabel: 'internship',
@@ -3012,6 +3145,7 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
                 sharedEndWordKeys,
                 minWords: TARGET_INTERNSHIP_BULLET_MIN_WORDS,
                 maxWords: TARGET_INTERNSHIP_BULLET_MAX_WORDS,
+                requiredSkills: pickCoreSkills(item?.description || '', resumeData?.skills || []),
             }),
         })),
         skills: atsOnly ? missingSkills.slice(0, 20) : normalizeSkills(resumeData.skills),
