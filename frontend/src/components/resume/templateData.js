@@ -62,7 +62,7 @@ const clampBulletLineCount = (value = 3) => {
         return 3;
     }
 
-    return Math.max(2, Math.min(3, Math.round(parsed)));
+    return Math.max(3, Math.min(3, Math.round(parsed)));
 };
 
 const ensureBulletLines = (lines = [], fallback = [], maxLines = 3) => {
@@ -170,51 +170,10 @@ const normalizeEducation = (value = []) =>
         }))
         .filter((item) => hasAnyValue(item, ['institution', 'degree', 'startYear', 'endYear']));
 
-const isDenseSectionList = (value = []) => (Array.isArray(value) ? value.length : 0) >= 3;
-
-const buildCompressionSeed = (resumeData = {}) => {
-    const personal = resumeData?.personalDetails || {};
-    const rawSeed = cleanOneLine([
-        personal.fullName,
-        personal.title,
-        ...(Array.isArray(resumeData?.skills) ? resumeData.skills : []),
-    ].join('|'));
-
-    return [...rawSeed].reduce((sum, char) => sum + char.charCodeAt(0), 0);
-};
-
-const selectBulletCompressionTarget = ({ resumeData = {}, visibleExperience = [], projects = [] }) => {
-    const hasDenseExperience = isDenseSectionList(visibleExperience);
-    const hasDenseProjects = isDenseSectionList(projects);
-    const hasDenseExtras =
-        isDenseSectionList(resumeData?.achievements) ||
-        isDenseSectionList(resumeData?.certifications) ||
-        isDenseSectionList(resumeData?.hobbies);
-
-    if (!(hasDenseExperience || hasDenseProjects) || !hasDenseExtras) {
-        return null;
-    }
-
-    const seed = buildCompressionSeed(resumeData);
-    const section =
-        hasDenseExperience && hasDenseProjects
-            ? seed % 2 === 0 ? 'projects' : 'experience'
-            : hasDenseProjects ? 'projects' : 'experience';
-    const targetList = section === 'projects' ? projects : visibleExperience;
-    if (!targetList.length) {
-        return null;
-    }
-
-    return {
-        section,
-        index: seed % targetList.length,
-    };
-};
-
-const applyBulletCompression = (items = [], sectionKey = '', target = null) =>
-    (Array.isArray(items) ? items : []).map((item, index) => ({
+const applyBulletCompression = (items = []) =>
+    (Array.isArray(items) ? items : []).map((item) => ({
         ...item,
-        bulletMaxLines: target && target.section === sectionKey && target.index === index ? 2 : 3,
+        bulletMaxLines: 3,
     }));
 
 export const getTemplateData = (resumeData = {}) => {
@@ -222,16 +181,10 @@ export const getTemplateData = (resumeData = {}) => {
     const internships = normalizeInternships(resumeData.internships || []);
     const visibleExperience = resolveVisibleExperience(workExperience, internships);
     const projects = normalizeProjects(resumeData.projects || []);
-    const compressionTarget = selectBulletCompressionTarget({
-        resumeData,
-        visibleExperience,
-        projects,
-    });
-
     return {
         personalDetails: normalizePersonalDetails(resumeData.personalDetails || {}),
-        workExperience: applyBulletCompression(visibleExperience, 'experience', compressionTarget),
-        projects: applyBulletCompression(projects, 'projects', compressionTarget),
+        workExperience: applyBulletCompression(visibleExperience),
+        projects: applyBulletCompression(projects),
         internships: [],
         education: normalizeEducation(resumeData.education || []),
         skills: normalizeStringList(resumeData.skills),
