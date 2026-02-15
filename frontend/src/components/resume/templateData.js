@@ -28,6 +28,36 @@ const normalizeSummaryText = (text) => {
     return /[.!?]$/.test(normalizedText) ? normalizedText : `${normalizedText}.`;
 };
 
+const buildWorkFallbackDescription = (item = {}) => {
+    const role = clean(item.role) || 'Role';
+    const company = clean(item.company) || 'organization';
+    return [
+        `Delivered ${role} responsibilities at ${company} with consistent execution quality.`,
+        'Collaborated with stakeholders to complete assigned tasks and planned delivery milestones.',
+        'Improved workflow reliability through documentation discipline, validation, and timely issue resolution.',
+    ].join('\n');
+};
+
+const buildProjectFallbackDescription = (item = {}) => {
+    const name = clean(item.name) || 'Project';
+    const tech = clean(item.techStack) || 'relevant technologies';
+    return [
+        `Built ${name} features using ${tech} with maintainable implementation practices.`,
+        'Integrated functional requirements into delivery scope while preserving quality and technical clarity.',
+        'Validated outcomes through structured testing, defect resolution, and iterative improvements.',
+    ].join('\n');
+};
+
+const buildInternshipFallbackDescription = (item = {}) => {
+    const role = clean(item.role) || 'Intern';
+    const company = clean(item.company) || 'organization';
+    return [
+        `Executed ${role} tasks at ${company} with accountable ownership and delivery consistency.`,
+        'Supported project activities through analysis, implementation support, and documentation updates.',
+        'Strengthened delivery quality by addressing issues, validating fixes, and tracking task completion.',
+    ].join('\n');
+};
+
 const summaryToParagraph = (value = '') =>
     cleanOneLine(String(value || '').replace(/\n+/g, ' '));
 
@@ -55,6 +85,41 @@ const dedupeLines = (value = []) => {
             return true;
         });
 };
+
+const A4_BULLET_MAX_CHARS = 92;
+
+const fitBulletLineForA4 = (value = '', maxChars = A4_BULLET_MAX_CHARS) => {
+    const compact = cleanOneLine(value).replace(/^[\u2022*-]\s*/g, '');
+    if (!compact) {
+        return '';
+    }
+
+    const safeMaxChars = Math.max(40, Number(maxChars) || A4_BULLET_MAX_CHARS);
+    const words = compact.split(' ').filter(Boolean);
+    if (!words.length) {
+        return '';
+    }
+
+    let fitted = words.join(' ');
+    while (fitted.length > safeMaxChars && words.length > 1) {
+        words.pop();
+        fitted = words.join(' ');
+    }
+
+    return fitted
+        .replace(/\s+([,.;:!?])/g, '$1')
+        .replace(/[,:;]+$/g, '')
+        .trim();
+};
+
+const finalizeA4BulletLines = (lines = [], fallback = [], maxLines = 3) =>
+    ensureBulletLines(
+        (Array.isArray(lines) ? lines : []).map((line) => fitBulletLineForA4(line)).filter(Boolean),
+        (Array.isArray(fallback) ? fallback : []).map((line) => fitBulletLineForA4(line)).filter(Boolean),
+        maxLines,
+    )
+        .map((line) => fitBulletLineForA4(line))
+        .filter(Boolean);
 
 const clampBulletLineCount = (value = 3) => {
     const parsed = Number(value);
@@ -114,7 +179,7 @@ const normalizeWorkExperience = (value = []) =>
             role: clean(item.role),
             startDate: clean(item.startDate),
             endDate: clean(item.endDate),
-            description: normalizeMultiline(item.description),
+            description: normalizeMultiline(item.description) || buildWorkFallbackDescription(item),
             bulletMaxLines: 3,
         }))
         .filter((item) => hasAnyValue(item, ['company', 'role', 'startDate', 'endDate', 'description']))
@@ -126,7 +191,7 @@ const normalizeProjects = (value = []) =>
             name: clean(item.name),
             techStack: clean(item.techStack),
             link: clean(item.link),
-            description: normalizeMultiline(item.description),
+            description: normalizeMultiline(item.description) || buildProjectFallbackDescription(item),
             bulletMaxLines: 3,
         }))
         .filter((item) => hasAnyValue(item, ['name', 'techStack', 'link', 'description']));
@@ -138,7 +203,7 @@ const normalizeInternships = (value = []) =>
             role: clean(item.role),
             startDate: clean(item.startDate),
             endDate: clean(item.endDate),
-            description: normalizeMultiline(item.description),
+            description: normalizeMultiline(item.description) || buildInternshipFallbackDescription(item),
             bulletMaxLines: 3,
         }))
         .filter((item) => hasAnyValue(item, ['company', 'role', 'startDate', 'endDate', 'description']));
@@ -862,7 +927,7 @@ export const toBullets = (value, fallbackBullets = [], options = undefined) => {
     const maxBulletLines = resolveBulletMaxLines(options);
 
     if (!text) {
-        return ensureBulletLines([], fallbackBullets, maxBulletLines);
+        return finalizeA4BulletLines([], fallbackBullets, maxBulletLines);
     }
 
     const explicitLines = text
@@ -871,11 +936,11 @@ export const toBullets = (value, fallbackBullets = [], options = undefined) => {
         .filter(Boolean);
 
     if (explicitLines.length > 1) {
-        return ensureBulletLines(explicitLines, fallbackBullets, maxBulletLines);
+        return finalizeA4BulletLines(explicitLines, fallbackBullets, maxBulletLines);
     }
 
     if (explicitLines.length === 1 && bulletPrefix.test(text)) {
-        return ensureBulletLines(explicitLines, fallbackBullets, maxBulletLines);
+        return finalizeA4BulletLines(explicitLines, fallbackBullets, maxBulletLines);
     }
 
     const sentenceLines = text
@@ -886,7 +951,7 @@ export const toBullets = (value, fallbackBullets = [], options = undefined) => {
     if (sentenceLines.length) {
         const base = sentenceLines.slice(0, maxBulletLines);
         if (base.length === maxBulletLines) {
-            return base;
+            return finalizeA4BulletLines(base, fallbackBullets, maxBulletLines);
         }
 
         const expanded = dedupeLines([
@@ -897,8 +962,8 @@ export const toBullets = (value, fallbackBullets = [], options = undefined) => {
                 .filter(Boolean),
         ]);
 
-        return ensureBulletLines(expanded, fallbackBullets, maxBulletLines);
+        return finalizeA4BulletLines(expanded, fallbackBullets, maxBulletLines);
     }
 
-    return ensureBulletLines([], fallbackBullets, maxBulletLines);
+    return finalizeA4BulletLines([], fallbackBullets, maxBulletLines);
 };
