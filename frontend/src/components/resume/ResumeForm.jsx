@@ -147,7 +147,7 @@ function ResumeForm({
     };
 
     return (
-        <div className="space-y-5 pb-24 sm:pb-10">
+        <div className="space-y-5 pb-24 sm:pb-24">
             <FormStepper
                 steps={formSteps}
                 currentStep={currentStep}
