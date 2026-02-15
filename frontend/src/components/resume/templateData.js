@@ -75,6 +75,71 @@ const BULLET_WEAK_ENDINGS = new Set([
     'via',
 ]);
 
+const BULLET_START_VERBS_BASE = [
+    'Engineered', 'Architected', 'Implemented', 'Optimized', 'Orchestrated', 'Automated', 'Integrated', 'Deployed',
+    'Streamlined', 'Refined', 'Enhanced', 'Hardened', 'Strengthened', 'Elevated', 'Delivered', 'Validated',
+    'Analyzed', 'Resolved', 'Scaled', 'Accelerated', 'Stabilized', 'Structured', 'Standardized', 'Calibrated',
+    'Benchmarked', 'Instrumented', 'Monitored', 'Documented', 'Modernized', 'Consolidated', 'Simplified', 'Secured',
+    'Configured', 'Debugged', 'Upgraded', 'Maintained', 'Migrated', 'Tested', 'Verified', 'Reduced',
+    'Improved', 'Increased', 'Expanded', 'Optimised', 'Revamped', 'Designed', 'Directed', 'Coordinated',
+    'Executed', 'Forecasted', 'Governed', 'Prioritized', 'Planned', 'Synthesized', 'Mapped', 'Diagnosed',
+    'Mitigated', 'Prevented', 'Remediated', 'Triaged', 'Quantified', 'Measured', 'Tracked', 'Audited',
+    'Aligned', 'Reconciled', 'Balanced', 'Rebuilt', 'Reworked', 'Reconfigured', 'Refactored', 'Iterated',
+    'Provisioned', 'Containerized', 'Parallelized', 'Indexed', 'Optimised', 'Compiled', 'Abstracted', 'Encapsulated',
+    'Enabled', 'Facilitated', 'Enabled', 'Onboarded', 'Supported', 'Led', 'Guided', 'Mentored',
+    'Assessed', 'Inspected', 'Reviewed', 'Curated', 'Codified', 'Operationalized', 'Systematized', 'Orchestrated',
+    'Supervised', 'Governed', 'Staged', 'Finalized', 'Anchored', 'Tailored', 'Harmonized', 'Fortified',
+    'Safeguarded', 'Actualized', 'Activated', 'Adapted', 'Administered', 'Advanced', 'Amplified', 'Assembled',
+    'Boosted', 'Catalyzed', 'Clarified', 'Composed', 'Computed', 'Conceived', 'Conditioned', 'Connected',
+    'Corrected', 'Cultivated', 'Customized', 'Decoded', 'Defined', 'Delivered', 'Derived', 'Developed',
+    'Differentiated', 'Dispatched', 'Distributed', 'Drafted', 'Eliminated', 'Enabled', 'Enforced', 'Enriched',
+    'Established', 'Estimated', 'Evaluated', 'Evolved', 'Executed', 'Exercised', 'Explored', 'Extended',
+    'Extracted', 'Formulated', 'Generated', 'Handled', 'Identified', 'Illustrated', 'Improvised', 'Initiated',
+    'Installed', 'Interfaced', 'Interpreted', 'Leveraged', 'Localized', 'Maximized', 'Modeled', 'Navigated',
+    'Normalized', 'Observed', 'Organized', 'Patched', 'Perfected', 'Pinned', 'Prepared', 'Processed',
+    'Produced', 'Projected', 'Proofed', 'Protected', 'Published', 'Ranked', 'Realigned', 'Repaired',
+    'Replaced', 'Reported', 'Restructured', 'Retrofitted', 'Routed', 'Scheduled', 'Segmented', 'Selected',
+    'Sequenced', 'Shaped', 'Simulated', 'Solved', 'Specified', 'Synchronized', 'Tuned', 'Unified',
+    'Validated', 'Visualized', 'Won', 'Yielded',
+];
+
+const BULLET_START_PREFIXES = ['', 'Re', 'Co', 'Pre', 'Over', 'Hyper', 'Auto', 'Cross'];
+
+const BULLET_START_WORD_POOL = (() => {
+    const pool = [];
+    const seen = new Set();
+
+    const pushToken = (token = '') => {
+        const value = cleanOneLine(token).replace(/[^a-zA-Z-]/g, '').trim();
+        if (!value) {
+            return;
+        }
+        const normalized = `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+        const key = normalized.toLowerCase();
+        if (!key || seen.has(key)) {
+            return;
+        }
+        seen.add(key);
+        pool.push(normalized);
+    };
+
+    BULLET_START_VERBS_BASE.forEach((verb) => {
+        pushToken(verb);
+    });
+
+    BULLET_START_PREFIXES.forEach((prefix) => {
+        BULLET_START_VERBS_BASE.forEach((verb) => {
+            if (!prefix) {
+                return;
+            }
+            const candidate = `${prefix}${verb.charAt(0).toLowerCase()}${verb.slice(1)}`;
+            pushToken(candidate);
+        });
+    });
+
+    return pool.slice(0, 340);
+})();
+
 const hashSeed = (value = '') =>
     [...String(value || '')].reduce((sum, char, index) => sum + char.charCodeAt(0) * (index + 1), 0);
 
@@ -161,6 +226,23 @@ const stripSkillsFromLine = (line = '', skills = []) => {
 const pickStrongBulletEnding = (seedValue = 0) =>
     BULLET_STRONG_ENDINGS[Math.abs(Number(seedValue) || 0) % BULLET_STRONG_ENDINGS.length];
 
+const pickRandomUnusedStartWord = (seedValue = 0, usedStartKeys = null) => {
+    if (!(usedStartKeys instanceof Set)) {
+        return BULLET_START_WORD_POOL[Math.abs(Number(seedValue) || 0) % BULLET_START_WORD_POOL.length];
+    }
+
+    const available = BULLET_START_WORD_POOL.filter((token) => {
+        const key = String(token || '').toLowerCase();
+        return key && !usedStartKeys.has(key);
+    });
+
+    if (available.length) {
+        return available[Math.abs(Number(seedValue) || 0) % available.length];
+    }
+
+    return BULLET_START_WORD_POOL[Math.abs(Number(seedValue) || 0) % BULLET_START_WORD_POOL.length];
+};
+
 const pickRandomUnusedStrongEnding = (seedValue = 0, usedEndingKeys = null) => {
     if (!(usedEndingKeys instanceof Set)) {
         return pickStrongBulletEnding(seedValue);
@@ -212,13 +294,39 @@ const enforceStrongBulletEnding = (value = '', seedValue = 0, usedEndingKeys = n
         : tokens.slice(0, Math.max(0, tokens.length - 1));
 
     const body = contentTokens.join(' ').replace(/[,.!?;:]+$/g, '').trim();
-    const line = body ? `${body}, ${endingWord}` : endingWord;
+    const line = body ? `${body}, ${endingWord}.` : `${endingWord}.`;
 
     if (usedEndingKeys instanceof Set) {
         usedEndingKeys.add(String(endingWord || '').toLowerCase());
     }
 
     return line.trim();
+};
+
+const enforceUniqueBulletStart = (value = '', seedValue = 0, usedStartKeys = null) => {
+    const line = cleanOneLine(value).replace(/^[\u2022*-]\s*/g, '').trim();
+    if (!line) {
+        return '';
+    }
+
+    const tokens = line.split(/\s+/).filter(Boolean);
+    if (!tokens.length) {
+        return line;
+    }
+
+    const firstKey = String(tokens[0] || '').toLowerCase().replace(/[^a-z-]/g, '');
+    const shouldReplace = !firstKey || (usedStartKeys instanceof Set && usedStartKeys.has(firstKey));
+    if (shouldReplace) {
+        tokens[0] = pickRandomUnusedStartWord(seedValue, usedStartKeys) || tokens[0];
+    }
+
+    const result = tokens.join(' ').trim();
+    const finalStartKey = String(tokens[0] || '').toLowerCase().replace(/[^a-z-]/g, '');
+    if (usedStartKeys instanceof Set && finalStartKey) {
+        usedStartKeys.add(finalStartKey);
+    }
+
+    return result;
 };
 
 const normalizeBulletForA4 = (value = '', maxChars = 92, seedValue = 0, usedEndingKeys = null) => {
@@ -457,6 +565,7 @@ const enforceLivePreviewBulletQuality = (items = [], options = {}) => {
         contextFields = [],
         sharedLineKeys = new Set(),
         sharedEndingKeys = new Set(),
+        sharedStartKeys = new Set(),
     } = options || {};
 
     return (Array.isArray(items) ? items : []).map((item = {}, itemIndex = 0) => {
@@ -487,7 +596,8 @@ const enforceLivePreviewBulletQuality = (items = [], options = {}) => {
                 }
             }
 
-            const normalized = enforceStrongBulletEnding(candidate, seed + accepted.length, sharedEndingKeys);
+            const withUniqueStart = enforceUniqueBulletStart(candidate, seed + accepted.length, sharedStartKeys);
+            const normalized = enforceStrongBulletEnding(withUniqueStart, seed + accepted.length, sharedEndingKeys);
             const key = toBulletKey(normalized);
             const endingKey = getBulletEndingKey(normalized);
             if (
@@ -752,21 +862,24 @@ export const getTemplateData = (resumeData = {}) => {
     const internships = normalizeInternships(resumeData.internships || [], resumeData.skills || []);
     const sharedLineKeys = new Set();
     const sharedEndingKeys = new Set();
+    const sharedStartKeys = new Set();
     const visibleExperience = enforceLivePreviewBulletQuality(
         resolveVisibleExperience(workExperience, internships),
-        { section: 'experience', contextFields: ['role', 'company'], sharedLineKeys, sharedEndingKeys },
+        { section: 'experience', contextFields: ['role', 'company'], sharedLineKeys, sharedEndingKeys, sharedStartKeys },
     );
     const projects = enforceLivePreviewBulletQuality(normalizeProjects(resumeData.projects || []), {
         section: 'project',
         contextFields: ['name'],
         sharedLineKeys,
         sharedEndingKeys,
+        sharedStartKeys,
     });
     const cleanedInternships = enforceLivePreviewBulletQuality(internships, {
         section: 'internship',
         contextFields: ['role', 'company'],
         sharedLineKeys,
         sharedEndingKeys,
+        sharedStartKeys,
     });
     return {
         personalDetails: normalizePersonalDetails(resumeData.personalDetails || {}, resumeData),
