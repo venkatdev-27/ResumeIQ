@@ -81,49 +81,6 @@ const pickVariant = (variants = [], seed = 0) => {
     return pool[Math.abs(Number(seed) || 0) % pool.length];
 };
 
-const normalizeTechToken = (value = '') =>
-    cleanOneLine(value)
-        .replace(/[|/]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-const splitTechTokens = (value = '') =>
-    String(value || '')
-        .split(/[,;|]+/)
-        .flatMap((part) => normalizeTechToken(part).split(/[.\s]+/))
-        .map((token) => normalizeTechToken(token))
-        .filter(Boolean);
-
-const limitTechStackForBullet = (techStack = '', seed = 0) => {
-    const rawTokens = splitTechTokens(techStack);
-    const seen = new Set();
-    const tokens = rawTokens.filter((token) => {
-        const key = token.toLowerCase();
-        if (!key || seen.has(key)) {
-            return false;
-        }
-        seen.add(key);
-        return true;
-    });
-
-    if (!tokens.length) {
-        return 'core technologies';
-    }
-
-    const targetCount = Math.min(3, Math.max(2, tokens.length >= 2 ? 2 + (Math.abs(seed) % 2) : 1));
-    const selected = [];
-    let cursor = Math.abs(seed) % tokens.length;
-    while (selected.length < targetCount && selected.length < tokens.length) {
-        const candidate = tokens[cursor % tokens.length];
-        if (candidate && !selected.some((item) => item.toLowerCase() === candidate.toLowerCase())) {
-            selected.push(candidate);
-        }
-        cursor += 1;
-    }
-
-    return selected.join(', ');
-};
-
 const pickStrongBulletEnding = (seedValue = 0) =>
     BULLET_STRONG_ENDINGS[Math.abs(Number(seedValue) || 0) % BULLET_STRONG_ENDINGS.length];
 
@@ -142,11 +99,11 @@ const enforceStrongBulletEnding = (value = '', seedValue = 0) => {
     const lastTokenKey = String(tokens[lastIndex] || '')
         .toLowerCase()
         .replace(/[^a-z0-9%-]/g, '');
-    if (!lastTokenKey || BULLET_WEAK_ENDINGS.has(lastTokenKey)) {
+    if (!lastTokenKey || BULLET_WEAK_ENDINGS.has(lastTokenKey) || /ing$/.test(lastTokenKey)) {
         tokens[lastIndex] = pickStrongBulletEnding(seedValue);
     }
 
-    return `${tokens.join(' ')}.`;
+    return `${tokens.join(' ').replace(/[,.!?;:]+$/g, '')}.`;
 };
 
 const normalizeBulletForA4 = (value = '', maxChars = 92, seedValue = 0) => {
@@ -228,34 +185,37 @@ const buildWorkFallbackDescription = (item = {}, itemIndex = 0) => {
 
 const buildProjectFallbackDescription = (item = {}, itemIndex = 0) => {
     const name = clean(item.name) || 'Project';
-    const tech = clean(item.techStack) || 'relevant technologies';
-    const seed = hashSeed(`${name}|${tech}|project|${itemIndex}`);
-    const techFocus = limitTechStackForBullet(tech, seed);
+    const seed = hashSeed(`${name}|project|${itemIndex}`);
     const projectAlias = pickVariant(['the platform', 'the solution', 'the application'], seed + 21);
     const performanceGain = 12 + (seed % 19);
     const reliabilityGain = 8 + ((seed + 7) % 21);
+    const leadLine = pickVariant(
+        [
+            `Architected ${name} delivery workflows, increasing release velocity by ${performanceGain}% through disciplined orchestration and accountable execution`,
+            `Engineered ${name} solution pathways, raising delivery throughput by ${performanceGain}% through measured optimization and dependable coordination`,
+            `Implemented ${name} capability streams, improving execution efficiency by ${performanceGain}% through structured planning and resilient governance`,
+        ],
+        seed + 31,
+    );
     const lineTwo = pickVariant(
         [
-            `Engineered ${projectAlias} architecture in ${techFocus}, reducing response latency by ${performanceGain}% through optimization`,
-            `Implemented ${projectAlias} modules using ${techFocus}, improving throughput by ${performanceGain}% via profiling`,
-            `Optimized ${projectAlias} workflows with ${techFocus}, cutting processing overhead by ${performanceGain}% through refactoring`,
+            `Refined ${projectAlias} architecture decisions, reducing response latency by ${performanceGain}% through traceable iteration and rigorous validation`,
+            `Optimized ${projectAlias} processing flows, improving throughput by ${performanceGain}% through benchmarked refinement and proactive quality controls`,
+            `Strengthened ${projectAlias} execution paths, lowering operational overhead by ${performanceGain}% with systematic analysis and precise remediation`,
         ],
         seed + 1,
     );
     const lineThree = pickVariant(
         [
-            `Hardened ${projectAlias} quality controls, increasing defect-resolution efficiency by ${reliabilityGain}% and observability`,
-            `Strengthened ${projectAlias} release-readiness, improving deployment reliability by ${reliabilityGain}% through safeguards`,
-            `Elevated ${projectAlias} validation coverage, improving production resilience by ${reliabilityGain}% with governance`,
+            `Elevated ${projectAlias} quality safeguards, increasing defect-resolution efficiency by ${reliabilityGain}% with robust observability and risk governance`,
+            `Hardened ${projectAlias} release-readiness, improving deployment reliability by ${reliabilityGain}% through controlled validation and continuity planning`,
+            `Enhanced ${projectAlias} verification coverage, improving production resilience by ${reliabilityGain}% with auditable safeguards and operational discipline`,
         ],
         seed + 2,
     );
 
     return [
-        enforceStrongBulletEnding(
-            `Architected ${name} capabilities with ${techFocus}, improving delivery efficiency by ${performanceGain}% through precision`,
-            seed + 3,
-        ),
+        enforceStrongBulletEnding(leadLine, seed + 3),
         enforceStrongBulletEnding(lineTwo, seed + 4),
         enforceStrongBulletEnding(lineThree, seed + 5),
     ].join('\n');
@@ -318,8 +278,104 @@ const dedupeLines = (value = []) => {
         });
 };
 
+const DUMMY_BULLET_PATTERNS = [
+    /\bdummy\b/i,
+    /\bplaceholder\b/i,
+    /\btemplate\b/i,
+    /\blorem\b/i,
+    /\bipsum\b/i,
+    /\betc\b/i,
+    /\bmisc\b/i,
+    /\bvarious\b/i,
+];
+
+const toBulletKey = (value = '') =>
+    cleanOneLine(value)
+        .toLowerCase()
+        .replace(/[.!?]+$/g, '')
+        .replace(/[^a-z0-9%\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+const isDummyBulletLine = (value = '') => {
+    const line = cleanOneLine(value);
+    if (!line) {
+        return true;
+    }
+    return DUMMY_BULLET_PATTERNS.some((pattern) => pattern.test(line));
+};
+
+const splitDescriptionLines = (value = '') =>
+    normalizeMultiline(value)
+        .split('\n')
+        .map((line) => cleanOneLine(line).replace(/^[\u2022*-]\s*/g, '').trim())
+        .filter(Boolean);
+
+const buildPreviewUniqueLine = ({ section = 'experience', context = '', seed = 0, lineIndex = 0 }) => {
+    const contextLabel = cleanOneLine(context) || section;
+    const metric = 9 + ((Math.abs(seed) + lineIndex * 3) % 22);
+    const line = pickVariant(
+        [
+            `Engineered ${contextLabel} execution flow, improving delivery reliability by ${metric}% through disciplined validation and governance`,
+            `Optimized ${contextLabel} implementation lifecycle, reducing avoidable rework by ${metric}% with measurable controls and traceability`,
+            `Strengthened ${contextLabel} release quality, improving outcome consistency by ${metric}% through structured checkpoints and accountability`,
+        ],
+        seed + lineIndex,
+    );
+    return enforceStrongBulletEnding(line, seed + lineIndex + 41);
+};
+
+const enforceLivePreviewBulletQuality = (items = [], options = {}) => {
+    const { section = 'experience', contextFields = [] } = options || {};
+    const globalKeys = new Set();
+
+    return (Array.isArray(items) ? items : []).map((item = {}, itemIndex = 0) => {
+        const descriptionLines = splitDescriptionLines(item.description);
+        const context = contextFields
+            .map((field) => clean(item?.[field]))
+            .filter(Boolean)
+            .join(' ');
+        const seed = hashSeed(`${section}|${context}|${itemIndex}`);
+        const accepted = [];
+        const localKeys = new Set();
+
+        const tryPush = (line) => {
+            const normalized = enforceStrongBulletEnding(line, seed + accepted.length);
+            const key = toBulletKey(normalized);
+            if (!key || isDummyBulletLine(normalized) || localKeys.has(key) || globalKeys.has(key)) {
+                return false;
+            }
+            accepted.push(normalized);
+            localKeys.add(key);
+            globalKeys.add(key);
+            return true;
+        };
+
+        descriptionLines.forEach((line) => {
+            tryPush(line);
+        });
+
+        let cursor = 0;
+        while (accepted.length < 3 && cursor < 12) {
+            const generated = buildPreviewUniqueLine({
+                section,
+                context: context || section,
+                seed: seed + cursor,
+                lineIndex: accepted.length,
+            });
+            tryPush(generated);
+            cursor += 1;
+        }
+
+        return {
+            ...item,
+            description: accepted.slice(0, 3).join('\n'),
+        };
+    });
+};
+
 const A4_BULLET_MAX_CHARS = 78;
-const A4_BULLET_MIN_CHARS = 68;
+const A4_BULLET_MIN_CHARS = 74;
 const A4_BULLET_PADDING_TOKENS = [
     'with',
     'measurable',
@@ -531,13 +587,23 @@ const applyBulletCompression = (items = []) =>
 export const getTemplateData = (resumeData = {}) => {
     const workExperience = normalizeWorkExperience(resumeData.workExperience || []);
     const internships = normalizeInternships(resumeData.internships || []);
-    const visibleExperience = resolveVisibleExperience(workExperience, internships);
-    const projects = normalizeProjects(resumeData.projects || []);
+    const visibleExperience = enforceLivePreviewBulletQuality(
+        resolveVisibleExperience(workExperience, internships),
+        { section: 'experience', contextFields: ['role', 'company'] },
+    );
+    const projects = enforceLivePreviewBulletQuality(normalizeProjects(resumeData.projects || []), {
+        section: 'project',
+        contextFields: ['name'],
+    });
+    const cleanedInternships = enforceLivePreviewBulletQuality(internships, {
+        section: 'internship',
+        contextFields: ['role', 'company'],
+    });
     return {
         personalDetails: normalizePersonalDetails(resumeData.personalDetails || {}, resumeData),
         workExperience: applyBulletCompression(visibleExperience),
         projects: applyBulletCompression(projects),
-        internships: [],
+        internships: applyBulletCompression(cleanedInternships),
         education: normalizeEducation(resumeData.education || []),
         skills: normalizeStringList(resumeData.skills),
         certifications: normalizeStringList(resumeData.certifications),
