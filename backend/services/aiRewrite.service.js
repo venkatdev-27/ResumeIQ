@@ -1166,13 +1166,23 @@ const buildSummaryFallbackLines = (resumeData = {}) => {
     return dedupeLines(lines).slice(0, TARGET_SUMMARY_MAX_LINES);
 };
 
+const ensurePeriodEnding = (value = '') => {
+    const line = compactToOneLine(value);
+    if (!line) {
+        return '';
+    }
+
+    const withoutTrailingPunctuation = line.replace(/[.!?]+$/g, '').trim();
+    return withoutTrailingPunctuation ? `${withoutTrailingPunctuation}.` : '';
+};
+
 const ensureSentenceEnding = (value = '') => {
     const line = compactToOneLine(value);
     if (!line) {
         return '';
     }
 
-    return /[.!?]$/.test(line) ? line : `${line}.`;
+    return ensurePeriodEnding(line);
 };
 
 const SUMMARY_WEAK_ENDING_WORDS = new Set([
@@ -1692,6 +1702,58 @@ const enforceProjectCoreSkillsSingleLine = (bullets = [], coreSkills = []) => {
     });
 };
 
+const enforceWorkLikeCoreSkillsSingleLine = (bullets = [], coreSkills = []) => {
+    const safeBullets = Array.isArray(bullets)
+        ? bullets.map((line) => ensureSentenceEnding(compactToOneLine(line))).filter(Boolean)
+        : [];
+    const safeSkills = normalizeSkills(coreSkills).slice(0, 3);
+    if (!safeBullets.length || safeSkills.length < 2) {
+        return safeBullets.map((line) => ensureSentenceEnding(line));
+    }
+
+    const skillsRegex = new RegExp(`\\b(${safeSkills.map((skill) => escapePattern(skill)).join('|')})\\b`, 'ig');
+    const mentionCounts = safeBullets.map((line) => {
+        skillsRegex.lastIndex = 0;
+        return (line.match(skillsRegex) || []).length;
+    });
+    const maxMentions = Math.max(...mentionCounts, 0);
+    const preferredIndex = Math.max(0, mentionCounts.findIndex((count) => count === maxMentions));
+    const selectedSkills = safeSkills.slice(0, Math.min(3, safeSkills.length));
+
+    const withPrimary = safeBullets.map((line, index) => {
+        if (index !== preferredIndex) {
+            return ensureSentenceEnding(line);
+        }
+
+        skillsRegex.lastIndex = 0;
+        const existingUniqueMentions = new Set((line.match(skillsRegex) || []).map((item) => toWordKey(item))).size;
+        if (existingUniqueMentions >= 2) {
+            return ensureSentenceEnding(line);
+        }
+
+        const base = line.replace(/[.!?]+$/g, '').trim();
+        return ensureSentenceEnding(`${base} using ${selectedSkills.join(', ')}`);
+    });
+
+    return withPrimary.map((line, index) => {
+        if (index === preferredIndex) {
+            return ensureSentenceEnding(line);
+        }
+
+        let cleaned = line;
+        safeSkills.forEach((skill) => {
+            const tokenRegex = new RegExp(`\\b${escapePattern(skill)}\\b`, 'ig');
+            cleaned = cleaned.replace(tokenRegex, '');
+        });
+        cleaned = cleaned
+            .replace(/\s+([,.;:!?])/g, '$1')
+            .replace(/\s{2,}/g, ' ')
+            .replace(/\b(using|with|via)\s*(,)?\s*$/i, '')
+            .trim();
+        return ensureSentenceEnding(cleaned || line);
+    });
+};
+
 const getBulletBoundaryWordKey = (value = '', position = 'first') => {
     const tokens = tokenizeWords(value).map((token) => toWordKey(token)).filter(Boolean);
     if (!tokens.length) {
@@ -1871,9 +1933,9 @@ const buildContextFallbackBullets = (contextLabel = '') => {
     }
 
     return [
-        `Delivered measurable implementation outcomes${scopedContext} with accountable execution and quality controls.`,
-        `Implemented reliable workflows${scopedContext} and improved delivery consistency by ${deliveryMetric}% through validation.`,
-        `Enhanced role-aligned deliverables${scopedContext} through structured planning, verification, and operational excellence.`,
+        `Delivered role-aligned execution results${scopedContext} with accountable coordination, controlled delivery, and audit-ready quality evidence.`,
+        `Implemented reliable workflows${scopedContext} and improved delivery consistency by ${deliveryMetric}% through measurable verification.`,
+        `Enhanced operational deliverables${scopedContext} using planned testing, review discipline, and production-grade safeguards.`,
     ];
 };
 
@@ -1975,6 +2037,7 @@ const normalizeWorkExperienceSection = ({
     sourceItems,
     profession = '',
     skillsContext = '',
+    resumeSkills = [],
     sharedLineKeys = new Set(),
     sharedWordKeys = new Set(),
     sharedStartWordKeys = new Set(),
@@ -1990,26 +2053,34 @@ const normalizeWorkExperienceSection = ({
         .slice(0, 30)
         .map((sourceItem, index) => {
             const safePayload = ensureObject(safePayloadItems[index]);
+            const coreSkills = pickCoreSkills(
+                safePayload.improvedDescription || safePayload.description || '',
+                sourceItem.description || '',
+                resumeSkills,
+            ).slice(0, 3);
 
             return {
                 company: String(safePayload.company || sourceItem.company || '').trim(),
                 role: String(safePayload.role || sourceItem.role || '').trim(),
                 bullets: enforceGlobalBulletUniqueness({
-                    bullets: normalizeBulletList({
-                    bullets: safePayload.bullets,
-                    text: safePayload.improvedDescription || safePayload.description || '',
-                    fallbackText: sourceItem.description || '',
-                    allowSyntheticFallback,
-                    minWords: TARGET_EXPERIENCE_BULLET_MIN_WORDS,
-                    maxWords: TARGET_EXPERIENCE_BULLET_MAX_WORDS,
-                    contextLabel: buildSectionContextLabel({
-                        profession: effectiveProfession,
-                        sectionLabel: 'work experience',
-                        primaryLabel: safePayload.role || sourceItem.role || '',
-                        secondaryLabel: safePayload.company || sourceItem.company || '',
-                        tertiaryLabel: effectiveSkillsContext,
-                    }),
-                }),
+                    bullets: enforceWorkLikeCoreSkillsSingleLine(
+                        normalizeBulletList({
+                            bullets: safePayload.bullets,
+                            text: safePayload.improvedDescription || safePayload.description || '',
+                            fallbackText: sourceItem.description || '',
+                            allowSyntheticFallback,
+                            minWords: TARGET_EXPERIENCE_BULLET_MIN_WORDS,
+                            maxWords: TARGET_EXPERIENCE_BULLET_MAX_WORDS,
+                            contextLabel: buildSectionContextLabel({
+                                profession: effectiveProfession,
+                                sectionLabel: 'work experience',
+                                primaryLabel: safePayload.role || sourceItem.role || '',
+                                secondaryLabel: safePayload.company || sourceItem.company || '',
+                                tertiaryLabel: effectiveSkillsContext,
+                            }),
+                        }),
+                        coreSkills,
+                    ),
                     contextLabel: buildSectionContextLabel({
                         profession: effectiveProfession,
                         sectionLabel: 'work experience',
@@ -2037,7 +2108,7 @@ const normalizeProjectsSection = ({
     skillsContext = '',
     resumeSkills = [],
     includeSkillContext = true,
-    requireCoreSkillsPerBullet = false,
+    requireCoreSkillsPerBullet = true,
     sharedLineKeys = new Set(),
     sharedWordKeys = new Set(),
     sharedStartWordKeys = new Set(),
@@ -2144,22 +2215,25 @@ const normalizeInternshipsSection = ({
                 company: String(safePayload.company || sourceItem.company || '').trim(),
                 role: String(safePayload.role || sourceItem.role || '').trim(),
                 bullets: enforceGlobalBulletUniqueness({
-                    bullets: normalizeBulletList({
-                    bullets: safePayload.bullets,
-                    text: safePayload.improvedDescription || safePayload.description || '',
-                    fallbackText: sourceItem.description || '',
-                    allowSyntheticFallback,
-                    minWords: TARGET_INTERNSHIP_BULLET_MIN_WORDS,
-                    maxWords: TARGET_INTERNSHIP_BULLET_MAX_WORDS,
-                    requiredSkills: coreSkills,
-                    contextLabel: buildSectionContextLabel({
-                        profession: effectiveProfession,
-                        sectionLabel: 'internship',
-                        primaryLabel: safePayload.role || sourceItem.role || '',
-                        secondaryLabel: safePayload.company || sourceItem.company || '',
-                        tertiaryLabel: effectiveSkillsContext,
-                    }),
-                }),
+                    bullets: enforceWorkLikeCoreSkillsSingleLine(
+                        normalizeBulletList({
+                            bullets: safePayload.bullets,
+                            text: safePayload.improvedDescription || safePayload.description || '',
+                            fallbackText: sourceItem.description || '',
+                            allowSyntheticFallback,
+                            minWords: TARGET_INTERNSHIP_BULLET_MIN_WORDS,
+                            maxWords: TARGET_INTERNSHIP_BULLET_MAX_WORDS,
+                            requiredSkills: [],
+                            contextLabel: buildSectionContextLabel({
+                                profession: effectiveProfession,
+                                sectionLabel: 'internship',
+                                primaryLabel: safePayload.role || sourceItem.role || '',
+                                secondaryLabel: safePayload.company || sourceItem.company || '',
+                                tertiaryLabel: effectiveSkillsContext,
+                            }),
+                        }),
+                        coreSkills,
+                    ),
                     contextLabel: buildSectionContextLabel({
                         profession: effectiveProfession,
                         sectionLabel: 'internship',
@@ -2174,7 +2248,7 @@ const normalizeInternshipsSection = ({
                     sharedEndWordKeys,
                     minWords: TARGET_INTERNSHIP_BULLET_MIN_WORDS,
                     maxWords: TARGET_INTERNSHIP_BULLET_MAX_WORDS,
-                    requiredSkills: coreSkills,
+                    requiredSkills: [],
                 }),
             };
         })
@@ -2462,6 +2536,7 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
             sourceItems: resumeData.workExperience,
             profession,
             skillsContext,
+            resumeSkills: resumeData?.skills,
             sharedLineKeys,
             sharedWordKeys,
             sharedStartWordKeys,
@@ -2474,7 +2549,7 @@ const normalizeResumeImprovePayload = (payload, resumeData = {}, feedbackContext
             profession,
             skillsContext,
             resumeSkills: resumeData?.skills,
-            requireCoreSkillsPerBullet: false,
+            requireCoreSkillsPerBullet: true,
             sharedLineKeys,
             sharedWordKeys,
             sharedStartWordKeys,
@@ -2664,6 +2739,7 @@ const buildSummaryPreviewResponse = (summary = '', resumeData = {}) => {
             sourceItems: resumeData?.workExperience,
             profession,
             skillsContext,
+            resumeSkills: resumeData?.skills,
             sharedLineKeys,
             sharedWordKeys,
             sharedStartWordKeys,
@@ -2826,7 +2902,9 @@ BULLET RULES (STRICT):
 13. Do not repeat any full bullet line across projects, work experience, or internships, including live preview output.
 14. Never use dummy, template-like, placeholder, or repetitive bullet phrases.
 15. For each project, mention exactly 2 or 3 core skills derived primarily from that project's tech stack in one bullet line only, not all three lines.
-16. Internship bullets must also reflect practical use of 2 or 3 core skills where source context allows.
+16. For each work experience and internship item, include 2 or 3 core skills in only one bullet line, not all three lines.
+17. Make each bullet lexically distinct: do not reuse repeated template fragments (for example, avoid repeating phrases like "measurable outcomes through structured ...").
+18. End every bullet with a full stop only (period), not exclamation/question marks.
 
 SKILLS RULES:
 1. Keep only relevant technical skills missing or weak in the current resume.
@@ -2917,7 +2995,9 @@ Scope:
 13. Do not repeat any full bullet line across projects, work experience, or internships.
 14. Never use dummy, placeholder, or repetitive template phrasing.
 15. For each project, mention exactly 2 or 3 core skills derived primarily from that project's tech stack in one bullet line only, not all three lines.
-16. Internship bullets should also reference 2 or 3 core skills where source context allows.
+16. For each work experience and internship item, include 2 or 3 core skills in only one bullet line, not all three lines.
+17. Make each bullet lexically distinct and avoid repeated template fragments across bullets.
+18. End every bullet with a full stop only (period), not exclamation/question marks.
 
 Input:
 resumeData: ${resumeDataPreview}
@@ -3053,20 +3133,23 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
             company: String(item?.company || '').trim(),
             role: String(item?.role || '').trim(),
             bullets: enforceGlobalBulletUniqueness({
-                bullets: normalizeBulletList({
-                    text: item?.description || '',
-                    fallbackText: item?.description || '',
-                    allowSyntheticFallback: false,
-                    minWords: TARGET_EXPERIENCE_BULLET_MIN_WORDS,
-                    maxWords: TARGET_EXPERIENCE_BULLET_MAX_WORDS,
-                    contextLabel: buildSectionContextLabel({
-                        profession,
-                        sectionLabel: 'work experience',
-                        primaryLabel: item?.role || '',
-                        secondaryLabel: item?.company || '',
-                        tertiaryLabel: skillsContext,
+                bullets: enforceWorkLikeCoreSkillsSingleLine(
+                    normalizeBulletList({
+                        text: item?.description || '',
+                        fallbackText: item?.description || '',
+                        allowSyntheticFallback: false,
+                        minWords: TARGET_EXPERIENCE_BULLET_MIN_WORDS,
+                        maxWords: TARGET_EXPERIENCE_BULLET_MAX_WORDS,
+                        contextLabel: buildSectionContextLabel({
+                            profession,
+                            sectionLabel: 'work experience',
+                            primaryLabel: item?.role || '',
+                            secondaryLabel: item?.company || '',
+                            tertiaryLabel: skillsContext,
+                        }),
                     }),
-                }),
+                    pickCoreSkills(item?.description || '', resumeData?.skills || []),
+                ),
                 contextLabel: buildSectionContextLabel({
                     profession,
                     sectionLabel: 'work experience',
@@ -3085,58 +3168,71 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
         })),
         projects: (Array.isArray(resumeData.projects) ? resumeData.projects : []).map((item) => ({
             title: String(item?.name || item?.title || '').trim(),
-            bullets: enforceSingleProjectTitleMention(enforceGlobalBulletUniqueness({
-                bullets: normalizeBulletList({
-                    text: item?.description || '',
-                    fallbackText: item?.description || '',
-                    allowSyntheticFallback: false,
-                    minWords: TARGET_BULLET_MIN_WORDS,
-                    maxWords: TARGET_BULLET_MAX_WORDS,
-                    requiredSkills: [],
-                    contextLabel: buildSectionContextLabel({
-                        profession,
-                        sectionLabel: 'project',
-                        primaryLabel: item?.name || item?.title || 'delivery',
-                        secondaryLabel: item?.techStack || '',
-                        tertiaryLabel: skillsContext,
+            bullets: enforceProjectCoreSkillsSingleLine(
+                enforceSingleProjectTitleMention(
+                    enforceGlobalBulletUniqueness({
+                        bullets: normalizeBulletList({
+                            text: item?.description || '',
+                            fallbackText: item?.description || '',
+                            allowSyntheticFallback: false,
+                            minWords: TARGET_BULLET_MIN_WORDS,
+                            maxWords: TARGET_BULLET_MAX_WORDS,
+                            requiredSkills: [],
+                            contextLabel: buildSectionContextLabel({
+                                profession,
+                                sectionLabel: 'project',
+                                primaryLabel: item?.name || item?.title || 'delivery',
+                                secondaryLabel: item?.techStack || '',
+                                tertiaryLabel: skillsContext,
+                            }),
+                        }),
+                        contextLabel: buildSectionContextLabel({
+                            profession,
+                            sectionLabel: 'project',
+                            primaryLabel: item?.name || item?.title || 'delivery',
+                            secondaryLabel: item?.techStack || '',
+                            tertiaryLabel: skillsContext,
+                        }),
+                        sourceText: item?.description || '',
+                        sharedLineKeys,
+                        sharedWordKeys,
+                        sharedStartWordKeys,
+                        sharedEndWordKeys,
+                        minWords: TARGET_BULLET_MIN_WORDS,
+                        maxWords: TARGET_BULLET_MAX_WORDS,
+                        requiredSkills: [],
                     }),
+                    String(item?.name || item?.title || '').trim(),
+                ),
+                pickProjectCoreSkills({
+                    techStack: item?.techStack || '',
+                    description: item?.description || '',
+                    fallbackSkills: resumeData?.skills || [],
                 }),
-                contextLabel: buildSectionContextLabel({
-                    profession,
-                    sectionLabel: 'project',
-                    primaryLabel: item?.name || item?.title || 'delivery',
-                    secondaryLabel: item?.techStack || '',
-                    tertiaryLabel: skillsContext,
-                }),
-                sourceText: item?.description || '',
-                sharedLineKeys,
-                sharedWordKeys,
-                sharedStartWordKeys,
-                sharedEndWordKeys,
-                minWords: TARGET_BULLET_MIN_WORDS,
-                maxWords: TARGET_BULLET_MAX_WORDS,
-                requiredSkills: [],
-            }), String(item?.name || item?.title || '').trim()),
+            ),
         })),
         internships: (Array.isArray(resumeData.internships) ? resumeData.internships : []).map((item) => ({
             company: String(item?.company || '').trim(),
             role: String(item?.role || '').trim(),
             bullets: enforceGlobalBulletUniqueness({
-                bullets: normalizeBulletList({
-                    text: item?.description || '',
-                    fallbackText: item?.description || '',
-                    allowSyntheticFallback: false,
-                    minWords: TARGET_INTERNSHIP_BULLET_MIN_WORDS,
-                    maxWords: TARGET_INTERNSHIP_BULLET_MAX_WORDS,
-                    requiredSkills: pickCoreSkills(item?.description || '', resumeData?.skills || []),
-                    contextLabel: buildSectionContextLabel({
-                        profession,
-                        sectionLabel: 'internship',
-                        primaryLabel: item?.role || '',
-                        secondaryLabel: item?.company || '',
-                        tertiaryLabel: skillsContext,
+                bullets: enforceWorkLikeCoreSkillsSingleLine(
+                    normalizeBulletList({
+                        text: item?.description || '',
+                        fallbackText: item?.description || '',
+                        allowSyntheticFallback: false,
+                        minWords: TARGET_INTERNSHIP_BULLET_MIN_WORDS,
+                        maxWords: TARGET_INTERNSHIP_BULLET_MAX_WORDS,
+                        requiredSkills: [],
+                        contextLabel: buildSectionContextLabel({
+                            profession,
+                            sectionLabel: 'internship',
+                            primaryLabel: item?.role || '',
+                            secondaryLabel: item?.company || '',
+                            tertiaryLabel: skillsContext,
+                        }),
                     }),
-                }),
+                    pickCoreSkills(item?.description || '', resumeData?.skills || []),
+                ),
                 contextLabel: buildSectionContextLabel({
                     profession,
                     sectionLabel: 'internship',
@@ -3151,7 +3247,7 @@ const buildFallbackPayload = ({ resumeData = {}, feedbackContext = {}, mode = IM
                 sharedEndWordKeys,
                 minWords: TARGET_INTERNSHIP_BULLET_MIN_WORDS,
                 maxWords: TARGET_INTERNSHIP_BULLET_MAX_WORDS,
-                requiredSkills: pickCoreSkills(item?.description || '', resumeData?.skills || []),
+                requiredSkills: [],
             }),
         })),
         skills: atsOnly ? missingSkills.slice(0, 20) : normalizeSkills(resumeData.skills),
